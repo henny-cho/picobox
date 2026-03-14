@@ -1,0 +1,46 @@
+name: PicoBox CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+          cache: true
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Give execution permission to scripts
+        run: chmod +x ./script/setup.sh ./script/build.sh ./script/test.sh
+
+      - name: Run Environment Setup
+        run: ./script/setup.sh
+
+      - name: Run Build Script
+        run: ./script/build.sh
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: .
+
+      - name: Validation Tests (Full-Stack)
+        run: ./script/test.sh --fullstack

@@ -1,0 +1,33 @@
+FROM golang:1.26.1-bookworm AS builder
+
+# Set Go env for static linking
+ENV CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64
+
+WORKDIR /build
+
+# Copy go mod and download dependencies
+# Assumes context is project root
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build Master
+RUN go build -ldflags="-w -s" -o picobox-master ./cmd/picobox-master
+
+# Use distroless static as final runtime
+FROM gcr.io/distroless/static-debian12
+
+WORKDIR /
+
+# Copy the binary from builder
+COPY --from=builder /build/picobox-master /picobox-master
+
+# Master ports: gRPC(50051) and REST(3000)
+EXPOSE 50051 3000
+
+# Run the master node
+ENTRYPOINT ["/picobox-master"]

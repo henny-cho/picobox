@@ -1,0 +1,20 @@
+[Unit]
+Description=PicoBox Agent Daemon
+Documentation=https://github.com/henny-cho/picobox
+After=network.target
+
+[Service]
+Type=simple
+# Must be running as root to manipulate linux namespaces and cgroups
+User=root
+Group=root
+ExecStart=/usr/local/bin/picoboxd
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+# Secure environment handling (optional)
+# EnvironmentFile=-/etc/default/picoboxd
+
+[Install]
+WantedBy=multi-user.target

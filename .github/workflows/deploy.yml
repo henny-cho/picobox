@@ -1,0 +1,69 @@
+name: PicoBox CD Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.0.0
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install Protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Build Binaries (Master & Daemon)
+        run: |
+          chmod +x ./script/build.sh
+          ./script/build.sh
+
+      # 1. Daemon binary release (Upload to GitHub Releases)
+      - name: Archive Daemon Binary
+        run: tar -czvf picoboxd-linux-amd64.tar.gz -C bin picoboxd
+      
+      - name: Release to GitHub
+        uses: softprops/action-gh-release@v1
+        with:
+          files: picoboxd-linux-amd64.tar.gz
+
+      # 2. Docker Image Publish (Control Plane)
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build and Push Master Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: build/Dockerfile.master
+          push: true
+          tags: ghcr.io/${{ github.repository }}/picobox-master:latest,ghcr.io/${{ github.repository }}/picobox-master:${{ github.ref_name }}
+
+      - name: Build and Push Web Dashboard Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: build/Dockerfile.web
+          push: true
+          tags: ghcr.io/${{ github.repository }}/picobox-web:latest,ghcr.io/${{ github.repository }}/picobox-web:${{ github.ref_name }}
