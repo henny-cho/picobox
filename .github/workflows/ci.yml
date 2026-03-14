@@ -17,13 +17,13 @@ jobs:
       - name: Setup Go Environment
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.2'
+          go-version: '1.26.1'
           cache: true
 
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: 'web/package-lock.json'
 
@@ -37,9 +37,9 @@ jobs:
         run: ./script/build.sh
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.11.3
           working-directory: .
 
       - name: Validation Tests (Full-Stack)

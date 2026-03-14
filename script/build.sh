@@ -6,15 +6,31 @@ set -e
 
 echo "[Build] Starting build process for PicoBox..."
 
+# 0. Load Version Configurations
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/versions.sh"
+
 # ==============================================================================
-# 📝 LESSONS LEARNED: Go 1.24.2 is pinned due to golangci-lint & gRPC compatibility.
+# 📝 KNOWLEDGE BASE: Standardized to Go $GO_VERSION for stability.
 # ==============================================================================
-REQUIRED_GO="1.24.2"
+REQUIRED_GO="$GO_VERSION"
 CURRENT_GO=$(go version | awk '{print $3}' | sed 's/go//')
 if [ "$CURRENT_GO" != "$REQUIRED_GO" ]; then
     echo "[Build] ERROR: Required Go version $REQUIRED_GO not found (Current: $CURRENT_GO)."
     echo "[Build] Please run ./script/setup.sh first."
     exit 1
+fi
+
+# ==============================================================================
+# 🔵 Node.js Environment (NVM)
+# ==============================================================================
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+    nvm use "$NODE_VERSION" > /dev/null
+    echo "[Build] Using Node $(node -v) (NPM $(npm -v))"
+else
+    echo "[Build] WARNING: NVM not found. Using system Node $(node -v)"
 fi
 
 # Ensure we are in the project root directory

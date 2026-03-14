@@ -28,9 +28,9 @@ if [[ $(uname -m) == "aarch64" ]]; then
 fi
 
 # 3. Define common flags
-# --privileged: Essential for PicoBox to perform namespace/cgroup operations inside container
+# --container-options "--privileged": Essential for PicoBox to perform namespace/cgroup operations inside container
 # --container-daemon-socket: Connect to host docker daemon
-FLAGS="--privileged --container-daemon-socket /var/run/docker.sock $ARCH_FLAG"
+FLAGS="--container-options \"--privileged\" --container-daemon-socket /var/run/docker.sock $ARCH_FLAG"
 
 # 4. Execute act
 echo "[Act-Test] Running 'act' with privileged mode..."

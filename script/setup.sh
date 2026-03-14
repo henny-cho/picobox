@@ -7,15 +7,15 @@ set -e
 
 echo "[Setup] Starting environment configuration for PicoBox..."
 
+# 0. Load Version Configurations
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/versions.sh"
+
 # ==============================================================================
-# 📝 LESSONS LEARNED & KNOWLEDGE BASE
+# 📝 KNOWLEDGE BASE
 # ==============================================================================
-# [Date: 2026-03-14]
-# Issue: Go 1.25.0 causes compatibility issues with golangci-lint and gRPC symbols.
-# Resolution: Pin toolchain to Go 1.24.2 and google.golang.org/grpc to v1.64.0+.
-# [Date: 2026-03-15]
-# Issue: Minimal CI environments (Act) lack 'sudo' and 'ss' command.
-# Resolution: Add 'sudo' and 'iproute2' (for ss) to apt-get installation list.
+# - Standardized to Go $GO_VERSION for gRPC & golangci-lint compatibility.
+# - 'sudo' and 'iproute2' are essential for minimal CI (Act) environments.
 # ==============================================================================
 
 # 1. OS Dependencies
@@ -43,49 +43,79 @@ fi
 
 # 2. Protobuf Compiler
 echo "[Setup] Checking Protobuf Compiler (protoc)..."
-if ! command -v protoc &> /dev/null; then
-    echo "[Setup] Fetching and installing Protobuf Compiler..."
-    PROTOC_ZIP="protoc-24.0-linux-x86_64.zip"
-    if [[ $(uname -m) == "aarch64" ]]; then PROTOC_ZIP="protoc-24.0-linux-aarch_64.zip"; fi
+if ! command -v protoc &> /dev/null || [[ $(protoc --version) != *"$PROTOC_VERSION"* ]]; then
+    echo "[Setup] Fetching and installing Protobuf Compiler v$PROTOC_VERSION..."
+    PROTOC_ZIP="protoc-$PROTOC_VERSION-linux-x86_64.zip"
+    if [[ $(uname -m) == "aarch64" ]]; then PROTOC_ZIP="protoc-$PROTOC_VERSION-linux-aarch_64.zip"; fi
     
-    curl -OL "https://github.com/protocolbuffers/protobuf/releases/download/v24.0/$PROTOC_ZIP"
+    curl -OL "https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/$PROTOC_ZIP"
     if command -v sudo &> /dev/null; then
         sudo unzip -o "$PROTOC_ZIP" -d /usr/local bin/protoc 'include/*'
     else
         unzip -o "$PROTOC_ZIP" -d /usr/local bin/protoc 'include/*'
     fi
     rm -f "$PROTOC_ZIP"
-    echo "[Setup] protoc installed successfully."
+    echo "[Setup] protoc v$PROTOC_VERSION installed successfully."
 else
     echo "[Setup] protoc is already installed ($(protoc --version))."
 fi
 
-# 3. Go Toolchain (pinned to 1.24.2)
+# 3. Go Toolchain (pinned to $GO_VERSION)
 echo "[Setup] Checking Go version..."
 CURRENT_GO=$(go version 2>/dev/null | awk '{print $3}' | sed 's/go//' || echo "none")
-if [ "$CURRENT_GO" == "1.24.2" ]; then
-    echo "[Setup] Go 1.24.2 is already installed."
+if [ "$CURRENT_GO" == "$GO_VERSION" ]; then
+    echo "[Setup] Go $GO_VERSION is already installed."
 else
-    echo "[Setup] Installing Go 1.24.2 (Current: $CURRENT_GO)..."
+    echo "[Setup] Installing Go $GO_VERSION (Current: $CURRENT_GO)..."
     GO_ARCH="amd64"
     if [[ $(uname -m) == "aarch64" ]]; then GO_ARCH="arm64"; fi
-    curl -OL "https://go.dev/dl/go1.24.2.linux-$GO_ARCH.tar.gz"
+    curl -OL "https://go.dev/dl/go$GO_VERSION.linux-$GO_ARCH.tar.gz"
     if command -v sudo &> /dev/null; then
         sudo rm -rf /usr/local/go
-        sudo tar -C /usr/local -xzf "go1.24.2.linux-$GO_ARCH.tar.gz"
+        sudo tar -C /usr/local -xzf "go$GO_VERSION.linux-$GO_ARCH.tar.gz"
     else
         rm -rf /usr/local/go
-        tar -C /usr/local -xzf "go1.24.2.linux-$GO_ARCH.tar.gz"
+        tar -C /usr/local -xzf "go$GO_VERSION.linux-$GO_ARCH.tar.gz"
     fi
-    rm "go1.24.2.linux-$GO_ARCH.tar.gz"
+    rm "go$GO_VERSION.linux-$GO_ARCH.tar.gz"
 fi
 
-# 4. Go Plugins for Protobuf
+# 4. Node.js & NPM (via NVM)
+echo "[Setup] Checking Node.js and NPM..."
+
+# Load NVM if it exists
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+elif [ -s "/usr/local/bin/nvm" ]; then
+    source "/usr/local/bin/nvm"
+fi
+
+if ! command -v nvm &> /dev/null; then
+    echo "[Setup] Installing NVM..."
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+fi
+
+echo "[Setup] Installing/Using Node.js $NODE_VERSION..."
+nvm install "$NODE_VERSION"
+nvm use "$NODE_VERSION"
+nvm alias default "$NODE_VERSION"
+
+echo "[Setup] Updating NPM to latest..."
+npm install -g npm@latest
+
+# 5. Go Plugins for Protobuf
 echo "[Setup] Installing Go plugins (protoc-gen-go, protoc-gen-go-grpc)..."
 export PATH=$PATH:/usr/local/go/bin
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+go install google.golang.org/protobuf/cmd/protoc-gen-go@$PROTOC_GEN_GO_VERSION
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$PROTOC_GEN_GO_GRPC_VERSION
 
+
+# 6. Update Go Dependencies
+echo "[Setup] Updating Go dependencies..."
+"$SCRIPT_DIR/update-go-deps.sh"
 
 echo "[Setup] Environment setup completed successfully."
 echo "[Setup] IMPORTANT: Please run 'export PATH=\$PATH:/usr/local/go/bin:$(go env GOPATH)/bin' or restart your shell."

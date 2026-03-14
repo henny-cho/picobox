@@ -20,20 +20,23 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.2'
+          go-version: '1.26.1'
+          cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
 
-      - name: Install Protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Environment Setup
+        run: |
+          chmod +x ./script/setup.sh ./script/build.sh ./script/update-go-deps.sh
+          ./script/setup.sh
 
       - name: Build Binaries (Master & Daemon)
-        run: |
-          chmod +x ./script/build.sh
-          ./script/build.sh
+        run: ./script/build.sh
 
       # 1. Daemon binary release (Upload to GitHub Releases)
       - name: Archive Daemon Binary

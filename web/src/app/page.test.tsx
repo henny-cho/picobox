@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import Dashboard from '@/app/page'
 
 // Mock the global fetch API to simulate our Go Backend
@@ -22,14 +22,18 @@ describe('Dashboard Page', () => {
     jest.clearAllMocks()
   })
 
-  it('renders dashboard title and system status', () => {
-    render(<Dashboard />)
+  it('renders dashboard title and system status', async () => {
+    await act(async () => {
+      render(<Dashboard />)
+    })
     expect(screen.getByText('PicoBox')).toBeInTheDocument()
     expect(screen.getByText('System Online')).toBeInTheDocument()
   })
 
   it('fetches nodes and displays cards', async () => {
-    render(<Dashboard />)
+    await act(async () => {
+      render(<Dashboard />)
+    })
     
     // Wait for the mock fetch to resolve and the UI to update
     await waitFor(() => {
