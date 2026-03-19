@@ -20,7 +20,7 @@ source "$SCRIPT_DIR/versions.sh"
 
 # 1. OS Dependencies
 echo "[Setup] Checking system dependencies..."
-CHECK_PACKAGES=(unzip libcap-dev curl python3 iproute2 sudo)
+CHECK_PACKAGES=(unzip libcap-dev curl python3 iproute2 sudo build-essential)
 MISSING_PACKAGES=()
 
 # Using dpkg-query for faster check
@@ -33,9 +33,9 @@ done
 if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
     echo "[Setup] Installing missing packages: ${MISSING_PACKAGES[*]}"
     if command -v sudo &> /dev/null; then
-        sudo apt-get update -qq && sudo apt-get install -y "${MISSING_PACKAGES[@]}"
+        sudo DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get install -y "${MISSING_PACKAGES[@]}"
     else
-        apt-get update -qq && apt-get install -y "${MISSING_PACKAGES[@]}"
+        DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get update -qq && DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get install -y "${MISSING_PACKAGES[@]}"
     fi
 else
     echo "[Setup] All system dependencies are already satisfied."

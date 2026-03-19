@@ -13,24 +13,26 @@ source "$SCRIPT_DIR/versions.sh"
 # ==============================================================================
 # 📝 KNOWLEDGE BASE: Standardized to Go $GO_VERSION for stability.
 # ==============================================================================
-REQUIRED_GO="$GO_VERSION"
-CURRENT_GO=$(go version | awk '{print $3}' | sed 's/go//')
-if [ "$CURRENT_GO" != "$REQUIRED_GO" ]; then
-    echo "[Build] ERROR: Required Go version $REQUIRED_GO not found (Current: $CURRENT_GO)."
+# Ensure basic Go requirement is roughly matched instead of failing on minor mismatches
+if ! command -v go &> /dev/null; then
+    echo "[Build] ERROR: Go is not installed or not in PATH."
     echo "[Build] Please run ./script/setup.sh first."
     exit 1
+fi
+
+CURRENT_GO=$(go version | awk '{print $3}' | sed 's/go//')
+if [[ "$CURRENT_GO" != "$GO_VERSION"* ]]; then
+    echo "[Build] WARNING: Go version $CURRENT_GO is different from requested $GO_VERSION."
 fi
 
 # ==============================================================================
 # 🔵 Node.js Environment (NVM)
 # ==============================================================================
-export NVM_DIR="$HOME/.nvm"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-    source "$NVM_DIR/nvm.sh"
-    nvm use "$NODE_VERSION" > /dev/null
+load_nvm
+if command -v node &> /dev/null; then
     echo "[Build] Using Node $(node -v) (NPM $(npm -v))"
 else
-    echo "[Build] WARNING: NVM not found. Using system Node $(node -v)"
+    echo "[Build] WARNING: Node not found in PATH."
 fi
 
 # Ensure we are in the project root directory

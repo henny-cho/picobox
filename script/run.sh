@@ -4,6 +4,10 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/versions.sh"
+load_nvm
+
 echo "[Run] Starting PicoBox Full-Stack Environment..."
 
 # Ensure binaries are built
@@ -22,7 +26,7 @@ MASTER_PID=$!
 # Give the master server a moment to bind ports using wait loop
 echo "[Run] Waiting for Master gRPC port (50051) to be ready..."
 MAX_RETRIES=15; COUNT=0
-while ! (ss -ln | grep -q 50051) && [ $COUNT -lt $MAX_RETRIES ]; do sleep 1; COUNT=$((COUNT+1)); done
+while ! bash -c '< /dev/tcp/127.0.0.1/50051' 2>/dev/null && [ $COUNT -lt $MAX_RETRIES ]; do sleep 1; COUNT=$((COUNT+1)); done
 
 if [ $COUNT -eq $MAX_RETRIES ]; then
     echo "[Run] ERROR: Master server failed to start on port 50051. Check logs/master.log"
@@ -35,6 +39,10 @@ echo "[Run] 2. Starting PicoBox Dummy Daemon (pico-worker-1)..."
 DAEMON_PID=$!
 
 echo "[Run] 3. Starting Next.js Web Dashboard (Port: 3001)..."
+if [ ! -d "web/node_modules" ]; then
+    echo "[Run] Installing Web dependencies..."
+    (cd web && npm install) > logs/web_install.log 2>&1
+fi
 (cd web && npm run dev) > logs/web.log 2>&1 &
 WEB_PID=$!
 

@@ -6,6 +6,10 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/versions.sh"
+load_nvm
+
 echo "[Test] Starting Validation Loop for PicoBox..."
 
 # Ensure we are in the project root directory
@@ -17,7 +21,7 @@ cd "$ROOT_DIR"
 run_go_tests() {
     echo "[Test] Step 1: Running Go Tests (pkg/, cmd/)..."
     if [ -f "go.mod" ]; then
-        go test -v -race ./... > /tmp/picobox_go_test.log 2>&1
+        CGO_ENABLED=1 go test -v -race ./... > /tmp/picobox_go_test.log 2>&1
         return $?
     fi
     return 0
@@ -79,7 +83,7 @@ if [[ "$*" == *"--fullstack"* ]]; then
     # Wait for Master port to be ready
     echo "[Test] Waiting for Master port (50051) to be ready..."
     MAX_RETRIES=10; COUNT=0
-    while ! (ss -ln | grep -q 50051) && [ $COUNT -lt $MAX_RETRIES ]; do sleep 1; COUNT=$((COUNT+1)); done
+    while ! bash -c '< /dev/tcp/127.0.0.1/50051' 2>/dev/null && [ $COUNT -lt $MAX_RETRIES ]; do sleep 1; COUNT=$((COUNT+1)); done
 
     echo "[Test] Starting Daemon..."
     ./bin/picoboxd > logs/daemon_test.log 2>&1 &
