@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,23 +19,32 @@ import (
 
 const bufSize = 1024 * 1024
 
-var lis *bufconn.Listener
+var (
+	lis    *bufconn.Listener
+	master *PicoMasterServer
+	once   sync.Once
+)
 
-func initBufferConn() {
-	lis = bufconn.Listen(bufSize)
-	s := grpc.NewServer()
+func initBufferConn() *PicoMasterServer {
+	once.Do(func() {
+		lis = bufconn.Listen(bufSize)
+		s := grpc.NewServer()
 
-	server := &PicoMasterServer{
-		nodes: make(map[string]*pb.NodeMetrics),
-	}
-
-	pb.RegisterAgentServiceServer(s, server)
-
-	go func() {
-		if err := s.Serve(lis); err != nil {
-			panic(err)
+		master = &PicoMasterServer{
+			nodes:   make(map[string]*pb.NodeMetrics),
+			streams: make(map[string]pb.AgentService_ControlChannelServer),
 		}
-	}()
+
+		pb.RegisterAgentServiceServer(s, master)
+
+		go func() {
+			if err := s.Serve(lis); err != nil {
+				panic(err)
+			}
+		}()
+	})
+
+	return master
 }
 
 func bufDialer(context.Context, string) (net.Conn, error) {
@@ -43,7 +53,8 @@ func bufDialer(context.Context, string) (net.Conn, error) {
 
 // TestAPIRoutes validates the Fiber REST API returns expected nodes list (TDD)
 func TestAPIRoutes(t *testing.T) {
-	app := setupFiberApp()
+	master := initBufferConn()
+	app := setupFiberApp(master)
 
 	// Inject fake data into the master's memory for testing the REST endpoint
 	globalNodeState["test-node-01"] = &pb.NodeMetrics{
