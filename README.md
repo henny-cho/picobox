@@ -117,7 +117,7 @@ Compiles the Protobuf files, builds the Go binaries for Master/Agent, and prepar
 ### 3. Comprehensive Validation
 Run the full-stack validation loop including unit tests and real process integration:
 ```bash
-./script/test.sh --fullstack
+./script/build_n_test.sh --fullstack
 ```
 
 ---
@@ -126,7 +126,7 @@ Run the full-stack validation loop including unit tests and real process integra
 
 1. **Safety First**: All syscall errors must be wrapped with context to facilitate debugging in isolated environments.
 2. **Contract First**: Any changes to communication must start with `api/proto/picobox.proto`.
-3. **Zero Placeholder**: No code without tests. All logic must pass the `./script/test.sh` loop.
+3. **Zero Placeholder**: No code without tests. All logic must pass the `./script/build_n_test.sh` loop.
 4. **Docs**: All project documentation stays in **Korean**, while code comments and commit messages are in **English**.
 
 ---

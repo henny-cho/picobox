@@ -28,13 +28,10 @@ jobs:
           cache-dependency-path: 'web/package-lock.json'
 
       - name: Give execution permission to scripts
-        run: chmod +x ./script/setup.sh ./script/build.sh ./script/test.sh
+        run: chmod +x ./script/setup.sh ./script/build.sh ./script/build_n_test.sh
 
       - name: Run Environment Setup
         run: ./script/setup.sh
-
-      - name: Run Build Script
-        run: ./script/build.sh
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -42,5 +39,5 @@ jobs:
           version: v2.11.3
           working-directory: .
 
-      - name: Validation Tests (Full-Stack)
-        run: ./script/test.sh --fullstack
+      - name: Run Validation Loop
+        run: bash ./script/build_n_test.sh --fullstack

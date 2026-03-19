@@ -4,7 +4,18 @@
 
 set -e
 
-echo "[Build] Starting build process for PicoBox..."
+# Color Definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+BOLD_RED='\033[1;31m'
+BOLD_GREEN='\033[1;32m'
+BOLD_YELLOW='\033[1;33m'
+BOLD_CYAN='\033[1;36m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}[Build] Starting build process for PicoBox...${NC}"
 
 # 0. Load Version Configurations
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,14 +26,14 @@ source "$SCRIPT_DIR/versions.sh"
 # ==============================================================================
 # Ensure basic Go requirement is roughly matched instead of failing on minor mismatches
 if ! command -v go &> /dev/null; then
-    echo "[Build] ERROR: Go is not installed or not in PATH."
-    echo "[Build] Please run ./script/setup.sh first."
+    echo -e "${RED}[Build] ERROR: Go is not installed or not in PATH.${NC}"
+    echo -e "${YELLOW}[Build] Please run ./script/setup.sh first.${NC}"
     exit 1
 fi
 
 CURRENT_GO=$(go version | awk '{print $3}' | sed 's/go//')
 if [[ "$CURRENT_GO" != "$GO_VERSION"* ]]; then
-    echo "[Build] WARNING: Go version $CURRENT_GO is different from requested $GO_VERSION."
+    echo -e "${YELLOW}[Build] WARNING: Go version $CURRENT_GO is different from requested $GO_VERSION.${NC}"
 fi
 
 # ==============================================================================
@@ -30,9 +41,9 @@ fi
 # ==============================================================================
 load_nvm
 if command -v node &> /dev/null; then
-    echo "[Build] Using Node $(node -v) (NPM $(npm -v))"
+    echo -e "${CYAN}[Build] Using Node $(node -v) (NPM $(npm -v))${NC}"
 else
-    echo "[Build] WARNING: Node not found in PATH."
+    echo -e "${YELLOW}[Build] WARNING: Node not found in PATH.${NC}"
 fi
 
 # Ensure we are in the project root directory
@@ -41,7 +52,7 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$ROOT_DIR"
 
 # 1. Protobuf Compilation
-echo "[Build] Step 1: Compiling Protobuf..."
+echo -e "${CYAN}[Build] Step 1: Compiling Protobuf...${NC}"
 if [ -f "api/proto/picobox.proto" ]; then
     # Ensure output directory exists
     rm -rf internal/api/pb
@@ -51,32 +62,32 @@ if [ -f "api/proto/picobox.proto" ]; then
     protoc -Iapi/proto --go_out=internal/api/pb --go_opt=paths=source_relative \
            --go-grpc_out=internal/api/pb --go-grpc_opt=paths=source_relative \
            picobox.proto
-    echo "[Build] Protobuf generated in internal/api/pb."
+    echo -e "${GREEN}[Build] Protobuf generated in internal/api/pb.${NC}"
 else
-    echo "[Build] Skipping Protobuf compilation (api/proto/picobox.proto not found yet)."
+    echo -e "${YELLOW}[Build] Skipping Protobuf compilation (api/proto/picobox.proto not found yet).${NC}"
 fi
 
 # 2. Go Binary Build (Daemon & Master)
 build_go() {
-    echo "[Build] Step 2: Building Go Binaries..."
+    echo -e "${CYAN}[Build] Step 2: Building Go Binaries...${NC}"
     if [ -d "cmd/picoboxd" ]; then
         go build -o bin/picoboxd ./cmd/picoboxd
-        echo "[Build] picoboxd daemon built."
+        echo -e "${GREEN}[Build] picoboxd daemon built.${NC}"
     fi
 
     if [ -d "cmd/picobox-master" ]; then
         go build -o bin/picobox-master ./cmd/picobox-master
-        echo "[Build] picobox-master built."
+        echo -e "${GREEN}[Build] picobox-master built.${NC}"
     fi
 }
 
 # 3. Next.js Web Dashboard Build
 build_web() {
-    echo "[Build] Step 3: Building Next.js Web Dashboard..."
+    echo -e "${CYAN}[Build] Step 3: Building Next.js Web Dashboard...${NC}"
     if [ -d "web" ] && [ -f "web/package.json" ]; then
-        echo "[Build] Compiling Web frontend..."
+        echo -e "${CYAN}[Build] Compiling Web frontend...${NC}"
         (cd web && npm ci && npm run build)
-        echo "[Build] Next.js build completed."
+        echo -e "${GREEN}[Build] Next.js build completed.${NC}"
     fi
 }
 
@@ -93,8 +104,8 @@ wait $GO_PID || EXIT_CODE=$?
 wait $WEB_PID || EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
-    echo "[Build] ERROR: Build failed with exit code $EXIT_CODE"
+    echo -e "${RED}[Build] ERROR: Build failed with exit code $EXIT_CODE${NC}"
     exit $EXIT_CODE
 fi
 
-echo "[Build] Build process completed successfully."
+echo -e "${GREEN}[Build] Build process completed successfully.${NC}"

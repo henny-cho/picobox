@@ -113,11 +113,11 @@ picobox/
 **테스트가 통과하고 GitHub Actions CI에서 정상 빌드/테스트가 증명되면(Validation Loop)** 해당 Phase 혹은 세부 기능을 확정 짓는 Git Commit을 수행합니다.
 
 ### Phase 1: 개발 환경 자동화, CI/CD, 통합 테스트 프레임워크 셋업
-- **대상 파일:** `script/setup.sh`, `script/build.sh`, `script/test.sh`, `.github/workflows/ci.yml`
-- **목표:** 지속적 통합의 뼈대와 공통 테스트 스크립트(`test.sh`) 구축
+- **대상 파일:** `script/setup.sh`, `script/build.sh`, `script/build_n_test.sh`, `.github/workflows/ci.yml`
+- **목표:** 지속적 통합의 뼈대와 공통 테스트 스크립트(`build_n_test.sh`) 구축
 - **Validation Loop:**
-  1. `test.sh`을 작성하여 `go test ./...` 및 Node.js 코드 테스트가 일괄 실행되도록 구성
-  2. `ci.yml`에 `test.sh` 실행 단계를 추가하여 파이프라인에서 자동 검증되도록 연동
+  1. `build_n_test.sh`을 작성하여 `go test ./...` 및 Node.js 코드 테스트가 일괄 실행되도록 구성
+  2. `ci.yml`에 `build_n_test.sh` 실행 단계를 추가하여 파이프라인에서 자동 검증되도록 연동
 
 ### Phase 2: 프로토콜 및 통신 계층 검증 (Protocol Layer)
 - **대상 파일:** `api/proto/picobox.proto`, `pkg/network/grpc_test.go`
@@ -147,7 +147,7 @@ picobox/
 - **목표:** 데몬 모니터링 수신부(gRPC) 및 웹 대시보드 API(REST Fiber) 뼈대 테스트 및 구현
 - **Validation Loop:**
   1. (TDD) 통합 웹 API 엔드포인트 Mock 요청 및 gRPC 서버 가동 응답 단위 테스트 (Status 200, JSON 반환 등) 확인
-  2. 서버 로직 구축 후 엔드포인트 연동 검증. (`script/test.sh`을 통해 100% 동작 확인)
+  2. 서버 로직 구축 후 엔드포인트 연동 검증. (`script/build_n_test.sh`을 통해 100% 동작 확인)
 
 ### Phase 6: 프론트엔드 대시보드 UI 연동 (Admin Dashboard)
 - **대상 파일:** `web/app/page.test.tsx`, `web/components/NodeCard.tsx` 등
@@ -169,8 +169,8 @@ picobox/
 ### 6.2. CI/CD & Local Validation (Act)
 - **Privileged Mode**: `act`와 같은 컨테이너형 CI 환경에서 리눅스 네임스페이스 및 cgroups 관련 테스트를 수행하려면 반드시 `--privileged` (또는 `--container-options "--privileged"`) 플래그가 필요합니다.
 - **Sudo Dependency**: 최소화된 CI 컨테이너 이미지(`ubuntu:act-latest` 등)에는 `sudo` 명령어가 없습니다. `script/setup.sh`에서 환경을 감지하여 `apt-get install -y sudo`를 선행해야 합니다.
-- **Race conditions in Tests**: 통합 테스트 시 Master 서버가 포트(50051)를 점유하기 전에 Daemon이 연결을 시도하면 실패합니다. `test.sh`에서 `ss -ln`을 활용한 포트 대기 로직(Wait-for-Port)을 구현하여 해결했습니다.
+- **Race conditions in Tests**: 통합 테스트 시 Master 서버가 포트(50051)를 점유하기 전에 Daemon이 연결을 시도하면 실패합니다. `build_n_test.sh`에서 `ss -ln`을 활용한 포트 대기 로직(Wait-for-Port)을 구현하여 해결했습니다.
 
 ### 6.3. Development Efficiency
-- **Build Output Standard**: 모든 빌드 결과물은 `./bin/` 디렉토리로 통합 관리합니다. 이는 `test.sh`와 `ci.yml`에서 경로 정합성을 유지하기 위함입니다.
+- **Build Output Standard**: 모든 빌드 결과물은 `./bin/` 디렉토리로 통합 관리합니다. 이는 `build_n_test.sh`와 `ci.yml`에서 경로 정합성을 유지하기 위함입니다.
 - **npm ci vs npm install**: CI 환경에서는 `package-lock.json`의 무결성을 보장하고 재현성을 높이기 위해 반드시 `npm ci`를 사용해야 합니다.
