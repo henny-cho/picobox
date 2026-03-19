@@ -37,17 +37,31 @@ run_web_tests() {
     return 0
 }
 
-# Run both in parallel
+# 3. Run GitHub Actions (act-test.sh)
+run_act_tests() {
+    echo "[Test] Step 3: Running GitHub Actions (act-test.sh)..."
+    if [ -f "$SCRIPT_DIR/act-test.sh" ]; then
+        bash "$SCRIPT_DIR/act-test.sh" > /tmp/picobox_act_test.log 2>&1
+        return $?
+    fi
+    return 0
+}
+
+# Run in parallel
 run_go_tests &
 GO_TEST_PID=$!
 
 run_web_tests &
 WEB_TEST_PID=$!
 
+run_act_tests &
+ACT_TEST_PID=$!
+
 # Wait and capture results
 EXIT_CODE=0
 wait $GO_TEST_PID || EXIT_CODE=$?
 wait $WEB_TEST_PID || EXIT_CODE=$?
+wait $ACT_TEST_PID || EXIT_CODE=$?
 
 # Report results from logs for clarity
 echo "-----------------------------------------------------------------"
@@ -55,6 +69,8 @@ echo "[Test] Go Test Summary:"
 if [ -f /tmp/picobox_go_test.log ]; then tail -n 5 /tmp/picobox_go_test.log; fi
 echo "[Test] Web Test Summary:"
 if [ -f /tmp/picobox_web_test.log ]; then tail -n 5 /tmp/picobox_web_test.log; fi
+echo "[Test] Act Test Summary:"
+if [ -f /tmp/picobox_act_test.log ]; then tail -n 5 /tmp/picobox_act_test.log; fi
 echo "-----------------------------------------------------------------"
 
 if [ $EXIT_CODE -ne 0 ]; then
@@ -63,9 +79,9 @@ if [ $EXIT_CODE -ne 0 ]; then
 fi
 echo "[Test] Core validation suites passed."
 
-# 3. Full-Stack Integration Test (Optional)
+# 4. Full-Stack Integration Test (Optional)
 if [[ "$*" == *"--fullstack"* ]]; then
-    echo "[Test] Step 3: Running Full-Stack Integration Test..."
+    echo "[Test] Step 4: Running Full-Stack Integration Test..."
     
     # Ensure binaries are built
     if [ ! -f "./bin/picobox-master" ] || [ ! -f "./bin/picoboxd" ]; then
