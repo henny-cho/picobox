@@ -11,7 +11,7 @@
 PicoBox는 리눅스 네임스페이스(Namespaces)와 cgroups v2를 직접 제어하여 컨테이너를 구동하는 **초경량 분산 컨테이너 플랫폼**입니다. 기존의 무거운 컨테이너 런타임(containerd, Docker)을 대체하여, 에지 컴퓨팅(Edge Computing) 및 저사양 IoT 디바이스에서도 동작할 수 있는 극한의 경량화된 K8s-Lite 형태의 플랫폼을 구축하는 것이 목표입니다.
 
 ### 1.3. 핵심 개발 원칙
-- **언어 정책 (Language Policy):** 모든 문서는 **한국어**로 작성하며, 프로젝트 내부의 모든 코드 주석 및 커밋 메시지는 **영어**로 작성합니다.
+- **언어 정책 (Language Policy):** 프로젝트 내부의 모든 코드 주석 및 커밋 메시지는 **영어**로 작성합니다.
 - **사전 테스트 및 검증 루프 (Test-First & Validation Loop):** 각 개발 단계(Phase) 및 최종 목적 달성을 위해 반드시 **최소한의 검증용 테스트 코드를 사전에 작성하고 유지보수**해야 합니다. 모든 스택과 Phase의 완료 조건은 이 테스트 코드를 통과하는 '검증 루프(Validation Loop)'를 성공적으로 거치는 것입니다.
 - **형상 관리 (Version Control):** 각 Phase를 완료하거나 의미 있는 세부 단계를 마칠 때마다 반드시 **Git Commit**을 생성하여 형상을 관리합니다. 
 - **의존성 최소화 (Zero-External Dependencies):** Go 데몬(`picoboxd`) 개발 시 외부 컨테이너 런타임 라이브러리(runc 등)를 절대 사용하지 않습니다. 순수 Go 표준 라이브러리(`syscall`, `os/exec`)와 `golang.org/x/sys/unix`만을 사용하여 OS 커널을 직접 제어합니다.
@@ -55,7 +55,8 @@ graph TD
 
     MB -- gRPC RPC (Deploy/Kill Cmd) --> PD1
     PD1 -- gRPC Stream (Heartbeat/Metrics) --> MB
-    
+```
+
 - **Isolation Lifecycle**: `namespace_linux.go:Execute` ➔ `syscall.Clone` ➔ `cgroups_linux.go:ApplyLimits` ➔ `pkg/storage/storage_linux.go:PivotRoot`
 
 ### 2.5. 디렉토리 구조 상세 (Detailed Directory Structure)
