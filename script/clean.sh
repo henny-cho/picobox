@@ -30,6 +30,6 @@ if [ -d "web" ]; then
 fi
 
 # 4. Remove generated API code (optional, keeping for now as per user preference)
-# rm -rf api/gen/go/*
+# rm -rf internal/api/pb/*
 
 echo "[Clean] Cleanup completed successfully."

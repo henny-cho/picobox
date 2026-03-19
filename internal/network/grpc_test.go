@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/henny-cho/picobox/api/gen/go"
+	pb "github.com/henny-cho/picobox/internal/api/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"

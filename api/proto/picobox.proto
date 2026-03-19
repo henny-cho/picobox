@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package picobox;
 
-option go_package = "github.com/henny-cho/picobox/api/gen/go;picobox";
+option go_package = "github.com/henny-cho/picobox/internal/api/pb;picobox";
 
 // The Agent/Daemon sends health metrics to the Master server periodically.
 service AgentService {

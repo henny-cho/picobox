@@ -9,7 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	pb "github.com/henny-cho/picobox/api/gen/go"
+	pb "github.com/henny-cho/picobox/internal/api/pb"
 	"google.golang.org/grpc"
 )
 

@@ -44,14 +44,14 @@ cd "$ROOT_DIR"
 echo "[Build] Step 1: Compiling Protobuf..."
 if [ -f "api/proto/picobox.proto" ]; then
     # Ensure output directory exists
-    rm -rf api/gen/go
-    mkdir -p api/gen/go
+    rm -rf internal/api/pb
+    mkdir -p internal/api/pb
     # Ensure protoc plugin binary path is in PATH
     export PATH="$PATH:$(go env GOPATH)/bin"
-    protoc -Iapi/proto --go_out=api/gen/go --go_opt=paths=source_relative \
-           --go-grpc_out=api/gen/go --go-grpc_opt=paths=source_relative \
+    protoc -Iapi/proto --go_out=internal/api/pb --go_opt=paths=source_relative \
+           --go-grpc_out=internal/api/pb --go-grpc_opt=paths=source_relative \
            picobox.proto
-    echo "[Build] Protobuf generated in api/gen/go."
+    echo "[Build] Protobuf generated in internal/api/pb."
 else
     echo "[Build] Skipping Protobuf compilation (api/proto/picobox.proto not found yet)."
 fi
