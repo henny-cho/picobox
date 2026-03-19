@@ -32,11 +32,25 @@ fi
 # --container-daemon-socket: Connect to host docker daemon
 FLAGS="--container-options \"--privileged\" --container-daemon-socket /var/run/docker.sock $ARCH_FLAG"
 
-# 4. Execute act
+# 4. Check for Docker daemon access
+ACT_CMD="act"
+if [ ! -w /var/run/docker.sock ]; then
+    echo "[Act-Test] WARNING: Current user does not have access to /var/run/docker.sock."
+    if command -v sudo &> /dev/null; then
+        echo "[Act-Test] 'sudo' detected. Attempting to run 'act' with sudo..."
+        ACT_CMD="sudo act"
+    else
+        echo "[Act-Test] ERROR: 'sudo' not found and no access to docker socket."
+        echo "[Act-Test] Please add your user to the 'docker' group: sudo usermod -aG docker \$USER"
+        exit 1
+    fi
+fi
+
+# 5. Execute act
 echo "[Act-Test] Running 'act' with privileged mode..."
-echo "[Act-Test] Command: act -j build $FLAGS"
+echo "[Act-Test] Command: $ACT_CMD -j build $FLAGS"
 
 # Note: We focus on the 'build' job which contains the full validation loop.
-act -j build $FLAGS
+$ACT_CMD -j build $FLAGS
 
 echo "[Act-Test] Local CI/CD simulation completed."
