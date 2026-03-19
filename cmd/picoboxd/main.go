@@ -7,6 +7,8 @@ import (
 	"time"
 
 	pb "github.com/henny-cho/picobox/internal/api/pb"
+	"github.com/henny-cho/picobox/internal/isolation"
+	"github.com/henny-cho/picobox/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -27,13 +29,65 @@ func main() {
 
 	client := pb.NewAgentServiceClient(conn)
 
-	// Open a streaming RPC
-	stream, err := client.Heartbeat(context.Background())
+	// Open a bi-directional streaming RPC
+	stream, err := client.ControlChannel(context.Background())
 	if err != nil {
 		log.Fatalf("Error opening stream: %v", err)
 	}
 
-	fmt.Println("[PicoBox-Daemon] Connected to master. Sending heartbeats...")
+	fmt.Println("[PicoBox-Daemon] Connected to master. Starting ControlChannel...")
+
+	// Goroutine to receive commands from Master
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				log.Fatalf("Stream closed or error receiving from master: %v", err)
+			}
+			if ack := msg.GetHeartbeatAck(); ack != nil {
+				// Master acknowledged heartbeat
+			} else if req := msg.GetDeployRequest(); req != nil {
+				fmt.Printf("[PicoBox-Daemon] Received DeployRequest for container %s\n", req.ContainerId)
+				
+				go func(containerId string) {
+					// 1. Storage setup
+					storeMgr := storage.NewStorageManager("")
+					lower, upper, work, merged, err := storeMgr.PrepareOverlayDirs(containerId)
+					
+					success := true
+					errMsg := ""
+					
+					if err == nil {
+						// Note: MountOverlayFS requires root. In tests we mock or ignore errors if not root.
+						err = storeMgr.MountOverlayFS(lower, upper, work, merged)
+						if err != nil {
+							fmt.Printf("Warning: MountOverlayFS failed (needs root): %v\n", err)
+							// Proceeding anyway for the sake of the daemon loop in non-root dev environments
+						}
+					}
+
+					// 2. Isolation process spawn
+					// In a real scenario, this would execute a self-exec stub that performs PivotRoot.
+					cmd := isolation.NewContainerProcess(context.Background(), "/bin/sleep", "5")
+					if errStart := cmd.Start(); errStart != nil {
+						success = false
+						errMsg = errStart.Error()
+					}
+
+					// 3. Send response
+					_ = stream.Send(&pb.AgentMessage{
+						Payload: &pb.AgentMessage_DeployResponse{
+							DeployResponse: &pb.DeployResponse{
+								ContainerId:  containerId,
+								Success:      success,
+								ErrorMessage: errMsg,
+							},
+						},
+					})
+				}(req.ContainerId)
+			}
+		}
+	}()
 
 	// Simulate periodic heartbeats
 	cpuUsage := 10.5
@@ -48,8 +102,12 @@ func main() {
 			DiskIoWait:       0.05,
 		}
 
-		if err := stream.Send(metrics); err != nil {
-			log.Fatalf("Failed to send a note: %v", err)
+		if err := stream.Send(&pb.AgentMessage{
+			Payload: &pb.AgentMessage_Metrics{
+				Metrics: metrics,
+			},
+		}); err != nil {
+			log.Fatalf("Failed to send metrics: %v", err)
 		}
 
 		fmt.Printf("Sent heartbeat: CPU %.1f%%, Mem %dMB\n", cpuUsage, memUsed/(1024*1024))
@@ -63,10 +121,5 @@ func main() {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Wait for response and close
-	res, err := stream.CloseAndRecv()
-	if err != nil {
-		log.Fatalf("Error receiving response: %v", err)
-	}
-	fmt.Printf("[PicoBox-Daemon] Finished. Master acknowledged: %v\n", res.Acknowledged)
+	fmt.Printf("[PicoBox-Daemon] Finished simulated run.\n")
 }

@@ -21,6 +21,172 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// AgentMessage is sent from the PicoBox Daemon to the Master.
+type AgentMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*AgentMessage_Metrics
+	//	*AgentMessage_DeployResponse
+	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentMessage) Reset() {
+	*x = AgentMessage{}
+	mi := &file_picobox_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentMessage) ProtoMessage() {}
+
+func (x *AgentMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_picobox_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentMessage.ProtoReflect.Descriptor instead.
+func (*AgentMessage) Descriptor() ([]byte, []int) {
+	return file_picobox_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *AgentMessage) GetPayload() isAgentMessage_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetMetrics() *NodeMetrics {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_Metrics); ok {
+			return x.Metrics
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetDeployResponse() *DeployResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_DeployResponse); ok {
+			return x.DeployResponse
+		}
+	}
+	return nil
+}
+
+type isAgentMessage_Payload interface {
+	isAgentMessage_Payload()
+}
+
+type AgentMessage_Metrics struct {
+	Metrics *NodeMetrics `protobuf:"bytes,1,opt,name=metrics,proto3,oneof"`
+}
+
+type AgentMessage_DeployResponse struct {
+	DeployResponse *DeployResponse `protobuf:"bytes,2,opt,name=deploy_response,json=deployResponse,proto3,oneof"`
+}
+
+func (*AgentMessage_Metrics) isAgentMessage_Payload() {}
+
+func (*AgentMessage_DeployResponse) isAgentMessage_Payload() {}
+
+// MasterMessage is sent from the Master to the PicoBox Daemon.
+type MasterMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*MasterMessage_HeartbeatAck
+	//	*MasterMessage_DeployRequest
+	Payload       isMasterMessage_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MasterMessage) Reset() {
+	*x = MasterMessage{}
+	mi := &file_picobox_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MasterMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MasterMessage) ProtoMessage() {}
+
+func (x *MasterMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_picobox_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MasterMessage.ProtoReflect.Descriptor instead.
+func (*MasterMessage) Descriptor() ([]byte, []int) {
+	return file_picobox_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *MasterMessage) GetPayload() isMasterMessage_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *MasterMessage) GetHeartbeatAck() *HeartbeatResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*MasterMessage_HeartbeatAck); ok {
+			return x.HeartbeatAck
+		}
+	}
+	return nil
+}
+
+func (x *MasterMessage) GetDeployRequest() *ContainerSpec {
+	if x != nil {
+		if x, ok := x.Payload.(*MasterMessage_DeployRequest); ok {
+			return x.DeployRequest
+		}
+	}
+	return nil
+}
+
+type isMasterMessage_Payload interface {
+	isMasterMessage_Payload()
+}
+
+type MasterMessage_HeartbeatAck struct {
+	HeartbeatAck *HeartbeatResponse `protobuf:"bytes,1,opt,name=heartbeat_ack,json=heartbeatAck,proto3,oneof"`
+}
+
+type MasterMessage_DeployRequest struct {
+	DeployRequest *ContainerSpec `protobuf:"bytes,2,opt,name=deploy_request,json=deployRequest,proto3,oneof"`
+}
+
+func (*MasterMessage_HeartbeatAck) isMasterMessage_Payload() {}
+
+func (*MasterMessage_DeployRequest) isMasterMessage_Payload() {}
+
 // NodeMetrics represents the hardware health and usage of a PicoBox node.
 type NodeMetrics struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -35,7 +201,7 @@ type NodeMetrics struct {
 
 func (x *NodeMetrics) Reset() {
 	*x = NodeMetrics{}
-	mi := &file_picobox_proto_msgTypes[0]
+	mi := &file_picobox_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +213,7 @@ func (x *NodeMetrics) String() string {
 func (*NodeMetrics) ProtoMessage() {}
 
 func (x *NodeMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_picobox_proto_msgTypes[0]
+	mi := &file_picobox_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +226,7 @@ func (x *NodeMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeMetrics.ProtoReflect.Descriptor instead.
 func (*NodeMetrics) Descriptor() ([]byte, []int) {
-	return file_picobox_proto_rawDescGZIP(), []int{0}
+	return file_picobox_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *NodeMetrics) GetHostname() string {
@@ -108,7 +274,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_picobox_proto_msgTypes[1]
+	mi := &file_picobox_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -120,7 +286,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_picobox_proto_msgTypes[1]
+	mi := &file_picobox_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -133,7 +299,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_picobox_proto_rawDescGZIP(), []int{1}
+	return file_picobox_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HeartbeatResponse) GetAcknowledged() bool {
@@ -156,7 +322,7 @@ type ContainerSpec struct {
 
 func (x *ContainerSpec) Reset() {
 	*x = ContainerSpec{}
-	mi := &file_picobox_proto_msgTypes[2]
+	mi := &file_picobox_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -168,7 +334,7 @@ func (x *ContainerSpec) String() string {
 func (*ContainerSpec) ProtoMessage() {}
 
 func (x *ContainerSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_picobox_proto_msgTypes[2]
+	mi := &file_picobox_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -181,7 +347,7 @@ func (x *ContainerSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerSpec.ProtoReflect.Descriptor instead.
 func (*ContainerSpec) Descriptor() ([]byte, []int) {
-	return file_picobox_proto_rawDescGZIP(), []int{2}
+	return file_picobox_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ContainerSpec) GetContainerId() string {
@@ -215,15 +381,16 @@ func (x *ContainerSpec) GetRootfsImageUrl() string {
 // DeployResponse indicates the result of a deployment attempt.
 type DeployResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeployResponse) Reset() {
 	*x = DeployResponse{}
-	mi := &file_picobox_proto_msgTypes[3]
+	mi := &file_picobox_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -235,7 +402,7 @@ func (x *DeployResponse) String() string {
 func (*DeployResponse) ProtoMessage() {}
 
 func (x *DeployResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_picobox_proto_msgTypes[3]
+	mi := &file_picobox_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -248,7 +415,14 @@ func (x *DeployResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployResponse.ProtoReflect.Descriptor instead.
 func (*DeployResponse) Descriptor() ([]byte, []int) {
-	return file_picobox_proto_rawDescGZIP(), []int{3}
+	return file_picobox_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DeployResponse) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
 }
 
 func (x *DeployResponse) GetSuccess() bool {
@@ -269,7 +443,15 @@ var File_picobox_proto protoreflect.FileDescriptor
 
 const file_picobox_proto_rawDesc = "" +
 	"\n" +
-	"\rpicobox.proto\x12\apicobox\"\xd1\x01\n" +
+	"\rpicobox.proto\x12\apicobox\"\x8f\x01\n" +
+	"\fAgentMessage\x120\n" +
+	"\ametrics\x18\x01 \x01(\v2\x14.picobox.NodeMetricsH\x00R\ametrics\x12B\n" +
+	"\x0fdeploy_response\x18\x02 \x01(\v2\x17.picobox.DeployResponseH\x00R\x0edeployResponseB\t\n" +
+	"\apayload\"\x9e\x01\n" +
+	"\rMasterMessage\x12A\n" +
+	"\rheartbeat_ack\x18\x01 \x01(\v2\x1a.picobox.HeartbeatResponseH\x00R\fheartbeatAck\x12?\n" +
+	"\x0edeploy_request\x18\x02 \x01(\v2\x16.picobox.ContainerSpecH\x00R\rdeployRequestB\t\n" +
+	"\apayload\"\xd1\x01\n" +
 	"\vNodeMetrics\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12*\n" +
 	"\x11cpu_usage_percent\x18\x02 \x01(\x02R\x0fcpuUsagePercent\x12*\n" +
@@ -283,14 +465,13 @@ const file_picobox_proto_rawDesc = "" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12(\n" +
 	"\x10memory_max_bytes\x18\x02 \x01(\x04R\x0ememoryMaxBytes\x12\"\n" +
 	"\rcpu_max_quota\x18\x03 \x01(\rR\vcpuMaxQuota\x12(\n" +
-	"\x10rootfs_image_url\x18\x04 \x01(\tR\x0erootfsImageUrl\"O\n" +
-	"\x0eDeployResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
-	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage2Q\n" +
-	"\fAgentService\x12A\n" +
-	"\tHeartbeat\x12\x14.picobox.NodeMetrics\x1a\x1a.picobox.HeartbeatResponse\"\x00(\x012U\n" +
-	"\rMasterService\x12D\n" +
-	"\x0fDeployContainer\x12\x16.picobox.ContainerSpec\x1a\x17.picobox.DeployResponse\"\x00B6Z4github.com/henny-cho/picobox/internal/api/pb;picoboxb\x06proto3"
+	"\x10rootfs_image_url\x18\x04 \x01(\tR\x0erootfsImageUrl\"r\n" +
+	"\x0eDeployResponse\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage2U\n" +
+	"\fAgentService\x12E\n" +
+	"\x0eControlChannel\x12\x15.picobox.AgentMessage\x1a\x16.picobox.MasterMessage\"\x00(\x010\x01B6Z4github.com/henny-cho/picobox/internal/api/pb;picoboxb\x06proto3"
 
 var (
 	file_picobox_proto_rawDescOnce sync.Once
@@ -304,23 +485,27 @@ func file_picobox_proto_rawDescGZIP() []byte {
 	return file_picobox_proto_rawDescData
 }
 
-var file_picobox_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_picobox_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_picobox_proto_goTypes = []any{
-	(*NodeMetrics)(nil),       // 0: picobox.NodeMetrics
-	(*HeartbeatResponse)(nil), // 1: picobox.HeartbeatResponse
-	(*ContainerSpec)(nil),     // 2: picobox.ContainerSpec
-	(*DeployResponse)(nil),    // 3: picobox.DeployResponse
+	(*AgentMessage)(nil),      // 0: picobox.AgentMessage
+	(*MasterMessage)(nil),     // 1: picobox.MasterMessage
+	(*NodeMetrics)(nil),       // 2: picobox.NodeMetrics
+	(*HeartbeatResponse)(nil), // 3: picobox.HeartbeatResponse
+	(*ContainerSpec)(nil),     // 4: picobox.ContainerSpec
+	(*DeployResponse)(nil),    // 5: picobox.DeployResponse
 }
 var file_picobox_proto_depIdxs = []int32{
-	0, // 0: picobox.AgentService.Heartbeat:input_type -> picobox.NodeMetrics
-	2, // 1: picobox.MasterService.DeployContainer:input_type -> picobox.ContainerSpec
-	1, // 2: picobox.AgentService.Heartbeat:output_type -> picobox.HeartbeatResponse
-	3, // 3: picobox.MasterService.DeployContainer:output_type -> picobox.DeployResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: picobox.AgentMessage.metrics:type_name -> picobox.NodeMetrics
+	5, // 1: picobox.AgentMessage.deploy_response:type_name -> picobox.DeployResponse
+	3, // 2: picobox.MasterMessage.heartbeat_ack:type_name -> picobox.HeartbeatResponse
+	4, // 3: picobox.MasterMessage.deploy_request:type_name -> picobox.ContainerSpec
+	0, // 4: picobox.AgentService.ControlChannel:input_type -> picobox.AgentMessage
+	1, // 5: picobox.AgentService.ControlChannel:output_type -> picobox.MasterMessage
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_picobox_proto_init() }
@@ -328,15 +513,23 @@ func file_picobox_proto_init() {
 	if File_picobox_proto != nil {
 		return
 	}
+	file_picobox_proto_msgTypes[0].OneofWrappers = []any{
+		(*AgentMessage_Metrics)(nil),
+		(*AgentMessage_DeployResponse)(nil),
+	}
+	file_picobox_proto_msgTypes[1].OneofWrappers = []any{
+		(*MasterMessage_HeartbeatAck)(nil),
+		(*MasterMessage_DeployRequest)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_picobox_proto_rawDesc), len(file_picobox_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   1,
 		},
 		GoTypes:           file_picobox_proto_goTypes,
 		DependencyIndexes: file_picobox_proto_depIdxs,

@@ -4,16 +4,26 @@ package picobox;
 
 option go_package = "github.com/henny-cho/picobox/internal/api/pb;picobox";
 
-// The Agent/Daemon sends health metrics to the Master server periodically.
+// The Agent/Daemon connects to the Master server to open a bi-directional control channel.
 service AgentService {
-  // Heartbeat streams node metrics from the daemon to the master.
-  rpc Heartbeat(stream NodeMetrics) returns (HeartbeatResponse) {}
+  // ControlChannel streams metrics from the agent, and receives deployment commands from the master.
+  rpc ControlChannel(stream AgentMessage) returns (stream MasterMessage) {}
 }
 
-// The Master server controls the agents by issuing deployment commands.
-service MasterService {
-  // DeployContainer directs the agent to deploy a new container based on the spec.
-  rpc DeployContainer(ContainerSpec) returns (DeployResponse) {}
+// AgentMessage is sent from the PicoBox Daemon to the Master.
+message AgentMessage {
+  oneof payload {
+    NodeMetrics metrics = 1;
+    DeployResponse deploy_response = 2;
+  }
+}
+
+// MasterMessage is sent from the Master to the PicoBox Daemon.
+message MasterMessage {
+  oneof payload {
+    HeartbeatResponse heartbeat_ack = 1;
+    ContainerSpec deploy_request = 2;
+  }
 }
 
 // NodeMetrics represents the hardware health and usage of a PicoBox node.
@@ -40,6 +50,7 @@ message ContainerSpec {
 
 // DeployResponse indicates the result of a deployment attempt.
 message DeployResponse {
-  bool success = 1;
-  string error_message = 2;
+  string container_id = 1;
+  bool success = 2;
+  string error_message = 3;
 }

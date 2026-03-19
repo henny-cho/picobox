@@ -99,9 +99,9 @@ func TestGRPCHeartbeat(t *testing.T) {
 
 	client := pb.NewAgentServiceClient(conn)
 
-	stream, err := client.Heartbeat(ctx)
+	stream, err := client.ControlChannel(ctx)
 	if err != nil {
-		t.Fatalf("Failed to open Heartbeat stream: %v", err)
+		t.Fatalf("Failed to open ControlChannel stream: %v", err)
 	}
 
 	metrics := &pb.NodeMetrics{
@@ -112,16 +112,21 @@ func TestGRPCHeartbeat(t *testing.T) {
 	}
 
 	// Send an initial heartbeat to our in-memory gRPC server
-	if err := stream.Send(metrics); err != nil {
+	if err := stream.Send(&pb.AgentMessage{
+		Payload: &pb.AgentMessage_Metrics{
+			Metrics: metrics,
+		},
+	}); err != nil {
 		t.Fatalf("Failed to send metrics: %v", err)
 	}
 
-	// Wait for response and close
-	res, err := stream.CloseAndRecv()
+	// Wait for response
+	res, err := stream.Recv()
 	if err != nil {
-		t.Fatalf("Failed to close/receive stream: %v", err)
+		t.Fatalf("Failed to receive stream: %v", err)
 	}
-	if !res.Acknowledged {
+	ack := res.GetHeartbeatAck()
+	if ack == nil || !ack.Acknowledged {
 		t.Errorf("Expected server to acknowledge heartbeat")
 	}
 }

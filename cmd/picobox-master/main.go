@@ -26,27 +26,38 @@ type PicoMasterServer struct {
 	mu    sync.RWMutex
 }
 
-// Heartbeat receives periodic streaming metrics from agents and updates the central registry.
-func (s *PicoMasterServer) Heartbeat(stream pb.AgentService_HeartbeatServer) error {
+// ControlChannel receives messages from agents (like metrics or deployment responses) and can send commands.
+func (s *PicoMasterServer) ControlChannel(stream pb.AgentService_ControlChannelServer) error {
 	for {
-		metrics, err := stream.Recv()
+		msg, err := stream.Recv()
 		if err == io.EOF {
-			return stream.SendAndClose(&pb.HeartbeatResponse{Acknowledged: true})
+			return nil
 		}
 		if err != nil {
 			return err
 		}
 
-		// Update both local and global state
-		s.mu.Lock()
-		s.nodes[metrics.Hostname] = metrics
-		s.mu.Unlock()
+		if metrics := msg.GetMetrics(); metrics != nil {
+			// Update both local and global state
+			s.mu.Lock()
+			s.nodes[metrics.Hostname] = metrics
+			s.mu.Unlock()
 
-		stateMutex.Lock()
-		globalNodeState[metrics.Hostname] = metrics
-		stateMutex.Unlock()
+			stateMutex.Lock()
+			globalNodeState[metrics.Hostname] = metrics
+			stateMutex.Unlock()
 
-		fmt.Printf("[Master] Received heartbeat from %s (CPU: %.1f%%)\n", metrics.Hostname, metrics.CpuUsagePercent)
+			fmt.Printf("[Master] Received metrics from %s (CPU: %.1f%%)\n", metrics.Hostname, metrics.CpuUsagePercent)
+
+			// Optionally send an ACK
+			_ = stream.Send(&pb.MasterMessage{
+				Payload: &pb.MasterMessage_HeartbeatAck{
+					HeartbeatAck: &pb.HeartbeatResponse{Acknowledged: true},
+				},
+			})
+		} else if resp := msg.GetDeployResponse(); resp != nil {
+			fmt.Printf("[Master] Received DeployResponse from Agent: Container %s Success: %v\n", resp.ContainerId, resp.Success)
+		}
 	}
 }
 

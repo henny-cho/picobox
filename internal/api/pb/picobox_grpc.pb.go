@@ -19,17 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_Heartbeat_FullMethodName = "/picobox.AgentService/Heartbeat"
+	AgentService_ControlChannel_FullMethodName = "/picobox.AgentService/ControlChannel"
 )
 
 // AgentServiceClient is the client API for AgentService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// The Agent/Daemon sends health metrics to the Master server periodically.
+// The Agent/Daemon connects to the Master server to open a bi-directional control channel.
 type AgentServiceClient interface {
-	// Heartbeat streams node metrics from the daemon to the master.
-	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[NodeMetrics, HeartbeatResponse], error)
+	// ControlChannel streams metrics from the agent, and receives deployment commands from the master.
+	ControlChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentMessage, MasterMessage], error)
 }
 
 type agentServiceClient struct {
@@ -40,27 +40,27 @@ func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
 	return &agentServiceClient{cc}
 }
 
-func (c *agentServiceClient) Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[NodeMetrics, HeartbeatResponse], error) {
+func (c *agentServiceClient) ControlChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentMessage, MasterMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_Heartbeat_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_ControlChannel_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[NodeMetrics, HeartbeatResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[AgentMessage, MasterMessage]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_HeartbeatClient = grpc.ClientStreamingClient[NodeMetrics, HeartbeatResponse]
+type AgentService_ControlChannelClient = grpc.BidiStreamingClient[AgentMessage, MasterMessage]
 
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
 //
-// The Agent/Daemon sends health metrics to the Master server periodically.
+// The Agent/Daemon connects to the Master server to open a bi-directional control channel.
 type AgentServiceServer interface {
-	// Heartbeat streams node metrics from the daemon to the master.
-	Heartbeat(grpc.ClientStreamingServer[NodeMetrics, HeartbeatResponse]) error
+	// ControlChannel streams metrics from the agent, and receives deployment commands from the master.
+	ControlChannel(grpc.BidiStreamingServer[AgentMessage, MasterMessage]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -71,8 +71,8 @@ type AgentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentServiceServer struct{}
 
-func (UnimplementedAgentServiceServer) Heartbeat(grpc.ClientStreamingServer[NodeMetrics, HeartbeatResponse]) error {
-	return status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+func (UnimplementedAgentServiceServer) ControlChannel(grpc.BidiStreamingServer[AgentMessage, MasterMessage]) error {
+	return status.Error(codes.Unimplemented, "method ControlChannel not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -95,12 +95,12 @@ func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer)
 	s.RegisterService(&AgentService_ServiceDesc, srv)
 }
 
-func _AgentService_Heartbeat_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(AgentServiceServer).Heartbeat(&grpc.GenericServerStream[NodeMetrics, HeartbeatResponse]{ServerStream: stream})
+func _AgentService_ControlChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServiceServer).ControlChannel(&grpc.GenericServerStream[AgentMessage, MasterMessage]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_HeartbeatServer = grpc.ClientStreamingServer[NodeMetrics, HeartbeatResponse]
+type AgentService_ControlChannelServer = grpc.BidiStreamingServer[AgentMessage, MasterMessage]
 
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -111,118 +111,11 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "Heartbeat",
-			Handler:       _AgentService_Heartbeat_Handler,
+			StreamName:    "ControlChannel",
+			Handler:       _AgentService_ControlChannel_Handler,
+			ServerStreams: true,
 			ClientStreams: true,
 		},
 	},
-	Metadata: "picobox.proto",
-}
-
-const (
-	MasterService_DeployContainer_FullMethodName = "/picobox.MasterService/DeployContainer"
-)
-
-// MasterServiceClient is the client API for MasterService service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// The Master server controls the agents by issuing deployment commands.
-type MasterServiceClient interface {
-	// DeployContainer directs the agent to deploy a new container based on the spec.
-	DeployContainer(ctx context.Context, in *ContainerSpec, opts ...grpc.CallOption) (*DeployResponse, error)
-}
-
-type masterServiceClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewMasterServiceClient(cc grpc.ClientConnInterface) MasterServiceClient {
-	return &masterServiceClient{cc}
-}
-
-func (c *masterServiceClient) DeployContainer(ctx context.Context, in *ContainerSpec, opts ...grpc.CallOption) (*DeployResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeployResponse)
-	err := c.cc.Invoke(ctx, MasterService_DeployContainer_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// MasterServiceServer is the server API for MasterService service.
-// All implementations must embed UnimplementedMasterServiceServer
-// for forward compatibility.
-//
-// The Master server controls the agents by issuing deployment commands.
-type MasterServiceServer interface {
-	// DeployContainer directs the agent to deploy a new container based on the spec.
-	DeployContainer(context.Context, *ContainerSpec) (*DeployResponse, error)
-	mustEmbedUnimplementedMasterServiceServer()
-}
-
-// UnimplementedMasterServiceServer must be embedded to have
-// forward compatible implementations.
-//
-// NOTE: this should be embedded by value instead of pointer to avoid a nil
-// pointer dereference when methods are called.
-type UnimplementedMasterServiceServer struct{}
-
-func (UnimplementedMasterServiceServer) DeployContainer(context.Context, *ContainerSpec) (*DeployResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeployContainer not implemented")
-}
-func (UnimplementedMasterServiceServer) mustEmbedUnimplementedMasterServiceServer() {}
-func (UnimplementedMasterServiceServer) testEmbeddedByValue()                       {}
-
-// UnsafeMasterServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to MasterServiceServer will
-// result in compilation errors.
-type UnsafeMasterServiceServer interface {
-	mustEmbedUnimplementedMasterServiceServer()
-}
-
-func RegisterMasterServiceServer(s grpc.ServiceRegistrar, srv MasterServiceServer) {
-	// If the following call panics, it indicates UnimplementedMasterServiceServer was
-	// embedded by pointer and is nil.  This will cause panics if an
-	// unimplemented method is ever invoked, so we test this at initialization
-	// time to prevent it from happening at runtime later due to I/O.
-	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
-		t.testEmbeddedByValue()
-	}
-	s.RegisterService(&MasterService_ServiceDesc, srv)
-}
-
-func _MasterService_DeployContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ContainerSpec)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MasterServiceServer).DeployContainer(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: MasterService_DeployContainer_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MasterServiceServer).DeployContainer(ctx, req.(*ContainerSpec))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// MasterService_ServiceDesc is the grpc.ServiceDesc for MasterService service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var MasterService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "picobox.MasterService",
-	HandlerType: (*MasterServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "DeployContainer",
-			Handler:    _MasterService_DeployContainer_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "picobox.proto",
 }
