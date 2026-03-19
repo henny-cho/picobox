@@ -39,6 +39,10 @@ run_web_tests() {
 
 # 3. Run GitHub Actions (act-test.sh)
 run_act_tests() {
+    if [[ "$ACT" == "true" || "$GITHUB_ACTIONS" == "true" ]]; then
+        echo "[Test] Step 3: Skipping GitHub Actions (act-test.sh) in CI environment."
+        return 0
+    fi
     echo "[Test] Step 3: Running GitHub Actions (act-test.sh)..."
     if [ -f "$SCRIPT_DIR/act-test.sh" ]; then
         bash "$SCRIPT_DIR/act-test.sh" > /tmp/picobox_act_test.log 2>&1
