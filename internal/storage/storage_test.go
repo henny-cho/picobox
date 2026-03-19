@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/henny-cho/picobox/pkg/storage"
+	"github.com/henny-cho/picobox/internal/storage"
 )
 
 // TestOverlayFSMount validates the creation of the underlying directory structures

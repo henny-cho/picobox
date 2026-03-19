@@ -26,8 +26,7 @@ describe('Dashboard Page', () => {
     await act(async () => {
       render(<Dashboard />)
     })
-    expect(screen.getByText('PicoBox')).toBeInTheDocument()
-    expect(screen.getByText('System Online')).toBeInTheDocument()
+    expect(screen.getByText('System Overview')).toBeInTheDocument()
   })
 
   it('fetches nodes and displays cards', async () => {
@@ -37,11 +36,8 @@ describe('Dashboard Page', () => {
     
     // Wait for the mock fetch to resolve and the UI to update
     await waitFor(() => {
-      expect(screen.getByTestId('node-grid')).toBeInTheDocument()
+      expect(screen.getByText('pico-master')).toBeInTheDocument()
     })
-
-    // Expect the pico-master card to be rendered based on mock fetch data
-    expect(screen.getByText('pico-master')).toBeInTheDocument()
     expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 })

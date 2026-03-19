@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/henny-cho/picobox/pkg/isolation"
+	"github.com/henny-cho/picobox/internal/isolation"
 )
 
 // TestNamespaceIsolation validates that a newly created process runs with isolated namespaces (PID).

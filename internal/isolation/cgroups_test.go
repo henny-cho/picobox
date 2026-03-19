@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/henny-cho/picobox/pkg/isolation"
+	"github.com/henny-cho/picobox/internal/isolation"
 )
 
 // TestCgroupMemoryLimit creates a mock cgroup directory structure
