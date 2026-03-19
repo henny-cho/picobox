@@ -49,8 +49,11 @@ WEB_PID=$!
 echo "================================================================="
 echo "✅ All services are running in the background!"
 echo ""
-echo "📡 Master REST API : http://localhost:3000/api/nodes"
-echo "🌍 Web Dashboard   : http://localhost:3001"
+HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -z "$HOST_IP" ]; then HOST_IP="localhost"; fi
+
+echo "📡 Master REST API : http://$HOST_IP:3000/api/nodes"
+echo "🌍 Web Dashboard   : http://$HOST_IP:3001"
 echo ""
 echo "🔎 Logs can be viewed with:"
 echo "   - Master: tail -f logs/master.log"
