@@ -46,6 +46,7 @@ message ContainerSpec {
   uint64 memory_max_bytes = 2; // e.g. for cgroup memory.max
   uint32 cpu_max_quota = 3;    // e.g. for cgroup cpu.max
   string rootfs_image_url = 4; // url or path to the rootfs tarball
+  string command = 5;          // command to execute inside the container
 }
 
 // DeployResponse indicates the result of a deployment attempt.

@@ -86,6 +86,7 @@ type DeployRequest struct {
 	MemoryMaxBytes uint64 `json:"memory_max_bytes"`
 	CpuMaxQuota    uint32 `json:"cpu_max_quota"`
 	RootfsImageUrl string `json:"rootfs_image_url"`
+	Command        string `json:"command"`
 }
 
 // setupFiberApp configures the web routing and middleware
@@ -127,6 +128,7 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 					MemoryMaxBytes: req.MemoryMaxBytes,
 					CpuMaxQuota:    req.CpuMaxQuota,
 					RootfsImageUrl: req.RootfsImageUrl,
+					Command:        req.Command,
 				},
 			},
 		})

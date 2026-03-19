@@ -11,6 +11,8 @@ import (
 	"github.com/henny-cho/picobox/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"os"
+	"os/exec"
 )
 
 func main() {
@@ -49,15 +51,22 @@ func main() {
 			} else if req := msg.GetDeployRequest(); req != nil {
 				fmt.Printf("[PicoBox-Daemon] Received DeployRequest for container %s\n", req.ContainerId)
 				
-				go func(containerId string) {
+				go func(containerId, rootfs, command string) {
 					// 1. Storage setup
-					storeMgr := storage.NewStorageManager("")
+					storageDir := os.Getenv("PICOBOX_STORAGE_DIR")
+					storeMgr := storage.NewStorageManager(storageDir)
 					lower, upper, work, merged, err := storeMgr.PrepareOverlayDirs(containerId)
 					
 					success := true
 					errMsg := ""
 					
 					if err == nil {
+						// Simple E2E Hack: If rootfs is provided, copy it to lower
+						if rootfs != "" {
+							fmt.Printf("[PicoBox-Daemon] Populating lower layer from %s\n", rootfs)
+							_ = exec.Command("cp", "-r", rootfs+"/.", lower).Run()
+						}
+
 						// Note: MountOverlayFS requires root. In tests we mock or ignore errors if not root.
 						err = storeMgr.MountOverlayFS(lower, upper, work, merged)
 						if err != nil {
@@ -67,8 +76,11 @@ func main() {
 					}
 
 					// 2. Isolation process spawn
-					// In a real scenario, this would execute a self-exec stub that performs PivotRoot.
-					cmd := isolation.NewContainerProcess(context.Background(), "/bin/sleep", "5")
+					if command == "" {
+						command = "/bin/sleep"
+					}
+					fmt.Printf("[PicoBox-Daemon] Spawning process: %s\n", command)
+					cmd := isolation.NewContainerProcess(context.Background(), command, "10")
 					if errStart := cmd.Start(); errStart != nil {
 						success = false
 						errMsg = errStart.Error()
@@ -84,7 +96,7 @@ func main() {
 							},
 						},
 					})
-				}(req.ContainerId)
+				}(req.ContainerId, req.RootfsImageUrl, req.Command)
 			}
 		}
 	}()

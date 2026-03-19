@@ -316,6 +316,7 @@ type ContainerSpec struct {
 	MemoryMaxBytes uint64                 `protobuf:"varint,2,opt,name=memory_max_bytes,json=memoryMaxBytes,proto3" json:"memory_max_bytes,omitempty"` // e.g. for cgroup memory.max
 	CpuMaxQuota    uint32                 `protobuf:"varint,3,opt,name=cpu_max_quota,json=cpuMaxQuota,proto3" json:"cpu_max_quota,omitempty"`          // e.g. for cgroup cpu.max
 	RootfsImageUrl string                 `protobuf:"bytes,4,opt,name=rootfs_image_url,json=rootfsImageUrl,proto3" json:"rootfs_image_url,omitempty"`  // url or path to the rootfs tarball
+	Command        string                 `protobuf:"bytes,5,opt,name=command,proto3" json:"command,omitempty"`                                        // command to execute inside the container
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -374,6 +375,13 @@ func (x *ContainerSpec) GetCpuMaxQuota() uint32 {
 func (x *ContainerSpec) GetRootfsImageUrl() string {
 	if x != nil {
 		return x.RootfsImageUrl
+	}
+	return ""
+}
+
+func (x *ContainerSpec) GetCommand() string {
+	if x != nil {
+		return x.Command
 	}
 	return ""
 }
@@ -460,12 +468,13 @@ const file_picobox_proto_rawDesc = "" +
 	"\fdisk_io_wait\x18\x05 \x01(\x02R\n" +
 	"diskIoWait\"7\n" +
 	"\x11HeartbeatResponse\x12\"\n" +
-	"\facknowledged\x18\x01 \x01(\bR\facknowledged\"\xaa\x01\n" +
+	"\facknowledged\x18\x01 \x01(\bR\facknowledged\"\xc4\x01\n" +
 	"\rContainerSpec\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12(\n" +
 	"\x10memory_max_bytes\x18\x02 \x01(\x04R\x0ememoryMaxBytes\x12\"\n" +
 	"\rcpu_max_quota\x18\x03 \x01(\rR\vcpuMaxQuota\x12(\n" +
-	"\x10rootfs_image_url\x18\x04 \x01(\tR\x0erootfsImageUrl\"r\n" +
+	"\x10rootfs_image_url\x18\x04 \x01(\tR\x0erootfsImageUrl\x12\x18\n" +
+	"\acommand\x18\x05 \x01(\tR\acommand\"r\n" +
 	"\x0eDeployResponse\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12#\n" +
