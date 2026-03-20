@@ -212,6 +212,13 @@ do_e2e() {
 do_run() {
     log_info "Starting Full-Stack..."
     do_stop
+    
+    # Check for port availability
+    if netstat -tuln | grep -E ":50051 |:3000 " > /dev/null; then
+        log_error "Port 50051 or 3000 is still in use. Please check with 'lsof -i'."
+        exit 1
+    fi
+
     [ ! -f "$PICOBOXD_BIN" ] && do_build
     ./scripts/prepare-rootfs.sh > /dev/null
 
@@ -250,22 +257,32 @@ do_doctor() {
         log_warn "Kernel version < 5.10 might have limited Cgroups v2 support."
     fi
 
-    # 2. Cgroups v2
+    # 2. Cgroups v2 checking controllers
     if [ -f "/sys/fs/cgroup/cgroup.controllers" ]; then
-        log_success "Cgroups v2 is enabled."
+        log_success "Cgroups v2 is enabled. Controllers: $(cat /sys/fs/cgroup/cgroup.controllers)"
     else
         log_error "Cgroups v2 is not detected. Ensure systemd.unified_cgroup_hierarchy=1."
+        ERRORS=$((ERRORS+1))
+    fi
+
+    # 2.1 OverlayFS Support
+    if grep -q "overlay" /proc/filesystems; then
+        log_success "OverlayFS support detected in kernel."
+    else
+        log_error "OverlayFS NOT detected. RootFS layering will fail."
         ERRORS=$((ERRORS+1))
     fi
 
     # 3. Privileges
     if [ "$EUID" -ne 0 ]; then
         log_warn "Not running as root. Container features (Mount, PivotRoot) will fail."
+        log_info "Recommendation: Run with 'sudo ./scripts/task.sh run' or 'sudo ./scripts/task.sh e2e'."
     else
         log_success "Running with root privileges."
     fi
 
-    # 4. Binary checks
+    # 4. Dependency checks
+    log_info "Tools: Go $(go version | awk '{print $3}'), Node $(node -v 2>/dev/null || echo 'N/A'), NPM $(npm -v 2>/dev/null || echo 'N/A')"
     [ ! -f "$PICOBOXD_BIN" ] && log_warn "Agent binary missing. Run './scripts/task.sh build'."
     [ ! -f "$PICOBOX_MASTER_BIN" ] && log_warn "Master binary missing. Run './scripts/task.sh build'."
 
@@ -278,13 +295,23 @@ do_doctor() {
 
 do_logs() {
     local SERVICE=${1:-"all"}
-    log_info "Showing logs for $SERVICE..."
+    local LINES=${2:-"50"}
+    log_info "Showing last $LINES logs for $SERVICE..."
+    
+    local LOG_FILE=""
     case "$SERVICE" in
-        master) tail -f "$LOG_DIR/master.log" ;;
-        agent)  tail -f "$LOG_DIR/agent.log" ;;
-        web)    tail -f "$LOG_DIR/web.log" ;;
-        *)      tail -f "$LOG_DIR"/*.log ;;
+        master) LOG_FILE="$LOG_DIR/master.log" ;;
+        agent)  LOG_FILE="$LOG_DIR/agent.log" ;;
+        web)    LOG_FILE="$LOG_DIR/web.log" ;;
+        *)      LOG_FILE="$LOG_DIR"/*.log ;;
     esac
+
+    for f in $LOG_FILE; do
+        if [ -f "$f" ]; then
+            tail -n "$LINES" -f "$f" &
+        fi
+    done
+    wait
 }
 
 do_release() {
@@ -320,7 +347,7 @@ case "$1" in
     run)    do_run ;;
     stop)   do_stop ;;
     doctor) do_doctor ;;
-    logs)   do_logs "$2" ;;
+    logs)   do_logs "$2" "$3" ;;
     release) do_release ;;
     clean)  do_clean ;;
     tidy)   do_tidy ;;
