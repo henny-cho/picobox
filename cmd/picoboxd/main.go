@@ -135,39 +135,63 @@ func handleDeploy(stream pb.AgentService_ControlChannelClient, req *pb.Container
 	rootfs := req.RootfsImageUrl
 	command := req.Command
 
-	// 1. Storage setup
-	storageDir := os.Getenv("PICOBOX_STORAGE_DIR")
-	storeMgr := storage.NewStorageManager(storageDir)
-	lower, upper, work, merged, _ := storeMgr.PrepareOverlayDirs(containerId)
-
 	success := true
 	errMsg := ""
 
-	if rootfs != "" {
-		_ = exec.Command("cp", "-r", rootfs+"/.", lower).Run()
-	}
-	// Note: Overlay mount requires root.
-	_ = storeMgr.MountOverlayFS(lower, upper, work, merged)
+	// 1. Storage setup
+	storageDir := os.Getenv("PICOBOX_STORAGE_DIR")
+	storeMgr := storage.NewStorageManager(storageDir)
 
-	// Isolation process spawn
-	// Using sh -c to allow complex shell scripts from UI
-	if command == "" {
-		command = "while true; do date; sleep 5; done"
-	} // TODO: fix this process is not killed when the container is stopped
-	cmd := isolation.NewContainerProcess(context.Background(), "/bin/sh", "-c", command)
-	containerRegistry.Store(containerId, cmd)
-
-	if errStart := cmd.Start(); errStart != nil {
+	lower, upper, work, merged, err := storeMgr.PrepareOverlayDirs(containerId)
+	if err != nil {
 		success = false
-		errMsg = errStart.Error()
-		containerRegistry.Delete(containerId)
-	} else {
-		fmt.Printf("[PicoBox-Agent] Container %s started (PID: %d)\n", containerId, cmd.Process.Pid)
-		go func() {
-			_ = cmd.Wait()
+		errMsg = "Storage prep failed: " + err.Error()
+	}
+
+	if success && rootfs != "" {
+		if strings.HasSuffix(rootfs, ".tar.gz") {
+			fmt.Printf("[PicoBox-Agent] Extracting tarball: %s to %s\n", rootfs, lower)
+			if err := storage.ExtractTarball(rootfs, lower); err != nil {
+				success = false
+				errMsg = "Failed to extract tarball: " + err.Error()
+			}
+		} else {
+			fmt.Printf("[PicoBox-Agent] Copying rootfs dir: %s to %s\n", rootfs, lower)
+			if err := exec.Command("cp", "-a", rootfs+"/.", lower).Run(); err != nil {
+				success = false
+				errMsg = "Failed to copy rootfs: " + err.Error()
+			}
+		}
+	}
+
+	if success {
+		// 2. Mount OverlayFS (Requires root)
+		if err := storeMgr.MountOverlayFS(lower, upper, work, merged); err != nil {
+			success = false
+			errMsg = "Overlay mount failed: " + err.Error()
+		}
+	}
+
+	if success {
+		// 3. Isolation process spawn
+		if command == "" {
+			command = "while true; do date; sleep 5; done"
+		}
+		cmd := isolation.NewContainerProcess(context.Background(), "/bin/sh", "-c", command)
+		containerRegistry.Store(containerId, cmd)
+
+		if errStart := cmd.Start(); errStart != nil {
+			success = false
+			errMsg = "Process start failed: " + errStart.Error()
 			containerRegistry.Delete(containerId)
-			fmt.Printf("[PicoBox-Agent] Container %s exited\n", containerId)
-		}()
+		} else {
+			fmt.Printf("[PicoBox-Agent] Container %s started (PID: %d)\n", containerId, cmd.Process.Pid)
+			go func() {
+				_ = cmd.Wait()
+				containerRegistry.Delete(containerId)
+				fmt.Printf("[PicoBox-Agent] Container %s exited\n", containerId)
+			}()
+		}
 	}
 
 	// 3. Send response
