@@ -70,7 +70,7 @@ do_setup() {
 
     log_info "Step 1: System dependencies..."
     if [ "$CI_MODE" = false ]; then
-        CHECK_PACKAGES=(unzip libcap-dev curl python3 iproute2 sudo build-essential)
+        CHECK_PACKAGES=(unzip libcap-dev curl python3 iproute2 sudo build-essential busybox)
         MISSING_PACKAGES=()
         for pkg in "${CHECK_PACKAGES[@]}"; do
             if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed"; then
@@ -210,31 +210,52 @@ do_e2e() {
 }
 
 do_run() {
-    log_info "Starting Full-Stack..."
+    log_info "Starting Full-Stack PicoBox Environment..."
     do_stop
     
-    # Check for port availability
-    if netstat -tuln | grep -E ":50051 |:3000 " > /dev/null; then
-        log_error "Port 50051 or 3000 is still in use. Please check with 'lsof -i'."
+    # 1. Pre-flight checks
+    if ss -tuln | grep -qE ":50051|:3000"; then
+        log_error "Port 50051 (gRPC) or 3000 (Web) is already in use. Please check 'lsof -i'."
         exit 1
     fi
 
     [ ! -f "$PICOBOXD_BIN" ] && do_build
     ./scripts/prepare-rootfs.sh > /dev/null
 
+    # 2. Start Services
+    log_info "Launching Master Server..."
     $PICOBOX_MASTER_BIN > "$LOG_DIR/master.log" 2>&1 &
     local MASTER_PID=$!
     wait_for_port 127.0.0.1 50051
 
+    log_info "Launching PicoBox Agent..."
     $PICOBOXD_BIN > "$LOG_DIR/agent.log" 2>&1 &
-    local DAEMON_PID=$!
+    local AGENT_PID=$!
 
+    log_info "Launching Web Dashboard (Next.js Dev)..."
     (cd web && npm run dev) > "$LOG_DIR/web.log" 2>&1 &
     local WEB_PID=$!
+    wait_for_port 127.0.0.1 3000 30 # Longer timeout for Next.js
 
-    log_success "Services running. Press Ctrl+C to stop."
-    trap "do_stop; exit 0" SIGINT SIGTERM
-    wait
+    log_success "All services are up and running!"
+    echo -e "${BOLD_WHITE}Dashboard:${NC} ${BLUE}http://localhost:3000${NC}"
+    echo -e "${BOLD_WHITE}Logs:${NC} ${CYAN}tail -f $LOG_DIR/*.log${NC}"
+    
+    # 3. Automatic Browser Open (Optional)
+    if command -v xdg-open &> /dev/null; then
+        xdg-open "http://localhost:3000" &> /dev/null &
+    fi
+
+    # 4. Process Monitoring & Signal Handling
+    trap "log_info 'Shutting down...'; kill $MASTER_PID $AGENT_PID $WEB_PID 2>/dev/null; do_stop; exit 0" SIGINT SIGTERM EXIT
+    
+    log_info "Monitoring processes (Press Ctrl+C to stop)..."
+    while true; do
+        if ! kill -0 $MASTER_PID 2>/dev/null; then log_error "Master server died unexpectedly!"; fi
+        if ! kill -0 $AGENT_PID 2>/dev/null; then log_error "Agent died unexpectedly!"; fi
+        # WEB_PID might be the intermediate npm process, so we check carefully or just ignore if it's less critical
+        sleep 5
+    done
 }
 
 do_stop() {
