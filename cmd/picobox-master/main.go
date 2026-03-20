@@ -27,6 +27,7 @@ var (
 	globalContainerState = make(map[string]*ContainerInfo)
 	execChannels         sync.Map // map[string]chan *pb.ExecResponse
 	stateMutex           sync.RWMutex
+	globalStore          *Store
 )
 
 // PicoMasterServer implements the gRPC AgentService
@@ -74,6 +75,9 @@ func (s *PicoMasterServer) ControlChannel(stream pb.AgentService_ControlChannelS
 
 			stateMutex.Lock()
 			globalNodeState[metrics.Hostname] = metrics
+			if globalStore != nil {
+				_ = globalStore.SaveNode(metrics)
+			}
 			stateMutex.Unlock()
 
 			fmt.Printf("[Master] Received metrics from %s (CPU: %.1f%%)\n", metrics.Hostname, metrics.CpuUsagePercent)
@@ -113,6 +117,9 @@ func (s *PicoMasterServer) ControlChannel(stream pb.AgentService_ControlChannelS
 					Hostname:       hostname,
 					Status:         status,
 				}
+			}
+			if globalStore != nil {
+				_ = globalStore.SaveContainer(resp.ContainerId, globalContainerState[resp.ContainerId])
 			}
 			stateMutex.Unlock()
 		} else if resp := msg.GetExecResponse(); resp != nil {
@@ -192,8 +199,10 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 				ErrorMessage: "Deploying...",
 			},
 			Hostname: req.Hostname,
-			Status:   "Pending",
 			Spec:     spec,
+		}
+		if globalStore != nil {
+			_ = globalStore.SaveContainer(req.ContainerId, globalContainerState[req.ContainerId])
 		}
 		stateMutex.Unlock()
 
@@ -298,6 +307,9 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 				MemoryMaxBytes: req.MemoryMaxBytes,
 				CpuMaxQuota:    req.CpuMaxQuota,
 			}
+			if globalStore != nil {
+				_ = globalStore.SaveContainer(req.ContainerId, info)
+			}
 			return c.JSON(fiber.Map{"success": true, "message": "Container spec updated"})
 		}
 
@@ -386,6 +398,26 @@ func startGRPC(port string) *PicoMasterServer {
 }
 
 func main() {
+	var err error
+	storageDir := "storage"
+	globalStore, err = NewStore(storageDir + "/picobox.db")
+	if err != nil {
+		log.Printf("Warning: Failed to initialize SQLite store: %v. Running in-memory only.", err)
+	} else {
+		fmt.Println("[PicoBox-Master] Persistence layer initialized.")
+		// Load initial state
+		if nodes, err := globalStore.LoadNodes(); err == nil {
+			stateMutex.Lock()
+			globalNodeState = nodes
+			stateMutex.Unlock()
+		}
+		if containers, err := globalStore.LoadContainers(); err == nil {
+			stateMutex.Lock()
+			globalContainerState = containers
+			stateMutex.Unlock()
+		}
+	}
+
 	// 1. Boot up the gRPC interface on 50051 for PicoBox Daemons
 	master := startGRPC(":50051")
 
