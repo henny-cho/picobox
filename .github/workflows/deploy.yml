@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*' # Trigger on version tags like v1.0.0
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
   packages: write
@@ -17,26 +20,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.1'
-          cache: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: 'web/package-lock.json'
-
-      - name: Environment Setup
-        run: |
-          chmod +x ./script/setup.sh ./script/build.sh ./script/update-go-deps.sh
-          ./script/setup.sh
+      - name: Setup Environment
+        uses: ./.github/actions/setup-picobox
 
       - name: Build Binaries (Master & Daemon)
-        run: ./script/build.sh
+        run: ./scripts/task.sh build
 
       # 1. Daemon binary release (Upload to GitHub Releases)
       - name: Archive Daemon Binary

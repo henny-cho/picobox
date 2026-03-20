@@ -31,4 +31,6 @@ out/
 
 # Project specific artifacts
 web/.swc/
+storage/rootfs/
+logs/
 

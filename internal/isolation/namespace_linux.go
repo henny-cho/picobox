@@ -18,9 +18,24 @@ func NewContainerProcess(ctx context.Context, command string, args ...string) *e
 	cmd.Stderr = os.Stderr
 
 	// Configure namespace isolation flags via SysProcAttr
+	// Adding CLONE_NEWUSER allows non-root users to create other namespaces on modern Linux.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWPID | syscall.CLONE_NEWUTS | syscall.CLONE_NEWNS | syscall.CLONE_NEWIPC | syscall.CLONE_NEWNET,
-		// Unshare flags can also be set here if necessary
+		Cloneflags: syscall.CLONE_NEWPID | syscall.CLONE_NEWUTS | syscall.CLONE_NEWNS | syscall.CLONE_NEWIPC | syscall.CLONE_NEWNET | syscall.CLONE_NEWUSER,
+		// Map the current user to root in the new namespace
+		UidMappings: []syscall.SysProcIDMap{
+			{
+				ContainerID: 0,
+				HostID:      os.Getuid(),
+				Size:        1,
+			},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{
+				ContainerID: 0,
+				HostID:      os.Getgid(),
+				Size:        1,
+			},
+		},
 	}
 
 	return cmd

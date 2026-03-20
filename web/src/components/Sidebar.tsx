@@ -1,12 +1,12 @@
 'use client'
 
 import React from 'react'
-import { 
-  LayoutDashboard, 
-  Box, 
-  Activity, 
-  Settings, 
-  Terminal, 
+import {
+  LayoutDashboard,
+  Box,
+  Activity,
+  Settings,
+  Terminal,
   HardDrive,
   ShieldCheck,
   Zap
@@ -55,8 +55,8 @@ const Sidebar = () => {
                 href={item.href}
                 className={cn(
                   "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                  isActive 
-                    ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-[inset_0_0_10px_rgba(34,211,238,0.1)]" 
+                  isActive
+                    ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-[inset_0_0_10px_rgba(34,211,238,0.1)]"
                     : "text-slate-400 hover:text-white hover:bg-slate-800/50"
                 )}
               >

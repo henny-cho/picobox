@@ -1,0 +1,37 @@
+name: 'Setup PicoBox Environment'
+description: 'Centralized setup for Go, Node.js, and system dependencies'
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Go Environment
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.1'
+        cache: true
+
+    - name: Setup Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        cache: 'npm'
+        cache-dependency-path: 'web/package-lock.json'
+
+    - name: Cache Build Tools
+      uses: actions/cache@v4
+      with:
+        path: .tools
+        key: ${{ runner.os }}-picobox-tools-${{ hashFiles('scripts/versions.sh') }}
+
+    - name: Give execution permission to scripts
+      shell: bash
+      run: chmod +x ./scripts/*.sh
+
+    - name: Run Environment Setup (CI Mode)
+      shell: bash
+      run: ./scripts/task.sh setup true
+
+    - name: Add Tools to PATH
+      shell: bash
+      run: |
+        echo "$(pwd)/.tools/bin" >> $GITHUB_PATH
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH

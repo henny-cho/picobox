@@ -11,12 +11,22 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	pb "github.com/henny-cho/picobox/internal/api/pb"
 	"google.golang.org/grpc"
+	"time"
 )
 
 // globalNodeState holds the real-time status of all active PicoBox daemons.
+type ContainerInfo struct {
+	DeployResponse *pb.DeployResponse `json:"deploy_response"`
+	Hostname       string             `json:"hostname"`
+	Status         string             `json:"status"` // "Pending", "Running", "Stopped", "Error"
+	Spec           *pb.ContainerSpec  `json:"spec"`   // Persist spec for restarts
+}
+
 var (
-	globalNodeState = make(map[string]*pb.NodeMetrics)
-	stateMutex      sync.RWMutex
+	globalNodeState      = make(map[string]*pb.NodeMetrics)
+	globalContainerState = make(map[string]*ContainerInfo)
+	execChannels         sync.Map // map[string]chan *pb.ExecResponse
+	stateMutex           sync.RWMutex
 )
 
 // PicoMasterServer implements the gRPC AgentService
@@ -74,10 +84,48 @@ func (s *PicoMasterServer) ControlChannel(stream pb.AgentService_ControlChannelS
 					HeartbeatAck: &pb.HeartbeatResponse{Acknowledged: true},
 				},
 			})
+		} else if resp := msg.GetStopResponse(); resp != nil {
+			fmt.Printf("[Master] Received StopResponse from Agent: Container %s Success: %v\n", resp.ContainerId, resp.Success)
+			stateMutex.Lock()
+			if info, ok := globalContainerState[resp.ContainerId]; ok {
+				if resp.Success {
+					info.Status = "Stopped"
+				} else {
+					info.Status = "Stop Failed"
+				}
+			}
+			stateMutex.Unlock()
 		} else if resp := msg.GetDeployResponse(); resp != nil {
 			fmt.Printf("[Master] Received DeployResponse from Agent: Container %s Success: %v\n", resp.ContainerId, resp.Success)
+			stateMutex.Lock()
+			if info, ok := globalContainerState[resp.ContainerId]; ok {
+				info.DeployResponse = resp
+				if resp.Success {
+					info.Status = "Running"
+				} else {
+					info.Status = "Error"
+				}
+			} else {
+				status := "Error"
+				if resp.Success { status = "Running" }
+				globalContainerState[resp.ContainerId] = &ContainerInfo{
+					DeployResponse: resp,
+					Hostname:       hostname,
+					Status:         status,
+				}
+			}
+			stateMutex.Unlock()
+		} else if resp := msg.GetExecResponse(); resp != nil {
+			if ch, ok := execChannels.Load(resp.ContainerId); ok {
+				ch.(chan *pb.ExecResponse) <- resp
+			}
 		}
 	}
+}
+
+type StopRequest struct {
+	Hostname    string `json:"hostname"`
+	ContainerId string `json:"container_id"`
 }
 
 type DeployRequest struct {
@@ -97,6 +145,13 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 	app.Use(cors.New())
 
 	api := app.Group("/api")
+
+	// GET /api/containers returns all deployed containers and their status.
+	api.Get("/containers", func(c *fiber.Ctx) error {
+		stateMutex.RLock()
+		defer stateMutex.RUnlock()
+		return c.JSON(globalContainerState)
+	})
 
 	// GET /api/nodes returns the current state of all connected nodes.
 	api.Get("/nodes", func(c *fiber.Ctx) error {
@@ -121,23 +176,185 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "target agent not found or offline"})
 		}
 
+		// Pre-register container info with hostname so we can track where it went
+		stateMutex.Lock()
+		spec := &pb.ContainerSpec{
+			ContainerId:    req.ContainerId,
+			RootfsImageUrl: req.RootfsImageUrl,
+			Command:        req.Command,
+			MemoryMaxBytes: req.MemoryMaxBytes,
+			CpuMaxQuota:    req.CpuMaxQuota,
+		}
+		globalContainerState[req.ContainerId] = &ContainerInfo{
+			DeployResponse: &pb.DeployResponse{
+				ContainerId: req.ContainerId,
+				Success:     false,
+				ErrorMessage: "Deploying...",
+			},
+			Hostname: req.Hostname,
+			Status:   "Pending",
+			Spec:     spec,
+		}
+		stateMutex.Unlock()
+
 		err := stream.Send(&pb.MasterMessage{
 			Payload: &pb.MasterMessage_DeployRequest{
-				DeployRequest: &pb.ContainerSpec{
-					ContainerId:    req.ContainerId,
-					MemoryMaxBytes: req.MemoryMaxBytes,
-					CpuMaxQuota:    req.CpuMaxQuota,
-					RootfsImageUrl: req.RootfsImageUrl,
-					Command:        req.Command,
+				DeployRequest: spec,
+			},
+		})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.JSON(fiber.Map{"status": "Deploy request sent to " + req.Hostname})
+	})
+
+	// POST /api/stop triggers a container termination.
+	api.Post("/stop", func(c *fiber.Ctx) error {
+		var req StopRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+
+		master.mu.RLock()
+		stream, ok := master.streams[req.Hostname]
+		master.mu.RUnlock()
+
+		if !ok {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "target agent not found or offline"})
+		}
+
+		err := stream.Send(&pb.MasterMessage{
+			Payload: &pb.MasterMessage_StopRequest{
+				StopRequest: &pb.StopRequest{
+					ContainerId: req.ContainerId,
+					Force:       true,
 				},
 			},
 		})
-
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to send deploy command"})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"message": "deploy command sent"})
+		return c.JSON(fiber.Map{"status": "Stop request sent to " + req.Hostname})
+	})
+
+	// POST /api/start re-deploys a stopped container with its existing spec.
+	api.Post("/start", func(c *fiber.Ctx) error {
+		var req struct {
+			Hostname    string `json:"hostname"`
+			ContainerId string `json:"container_id"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+
+		stateMutex.Lock()
+		info, exists := globalContainerState[req.ContainerId]
+		if exists && info.Status != "Running" {
+			info.Status = "Pending"
+		}
+		stateMutex.Unlock()
+
+		if !exists || info.Spec == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "container spec not found"})
+		}
+
+		master.mu.RLock()
+		stream, ok := master.streams[req.Hostname]
+		master.mu.RUnlock()
+
+		if !ok {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "target agent not found"})
+		}
+
+		err := stream.Send(&pb.MasterMessage{
+			Payload: &pb.MasterMessage_DeployRequest{
+				DeployRequest: info.Spec,
+			},
+		})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.JSON(fiber.Map{"status": "Start request sent to " + req.Hostname})
+	})
+
+	// POST /api/update updates the container specification for future starts.
+	api.Post("/update", func(c *fiber.Ctx) error {
+		var req DeployRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+
+		stateMutex.Lock()
+		defer stateMutex.Unlock()
+
+		if info, ok := globalContainerState[req.ContainerId]; ok {
+			info.Spec = &pb.ContainerSpec{
+				ContainerId:    req.ContainerId,
+				RootfsImageUrl: req.RootfsImageUrl,
+				Command:        req.Command,
+				MemoryMaxBytes: req.MemoryMaxBytes,
+				CpuMaxQuota:    req.CpuMaxQuota,
+			}
+			return c.JSON(fiber.Map{"success": true, "message": "Container spec updated"})
+		}
+
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "container not found"})
+	})
+
+	// POST /api/exec executes a command in a running container and returns the output.
+	api.Post("/exec", func(c *fiber.Ctx) error {
+		var req struct {
+			Hostname    string `json:"hostname" shadow:"true"`
+			ContainerId string `json:"container_id"`
+			Command     string `json:"command"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+
+		stateMutex.RLock()
+		info, exists := globalContainerState[req.ContainerId]
+		stateMutex.RUnlock()
+
+		if !exists {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "container not found"})
+		}
+
+		master.mu.RLock()
+		stream, ok := master.streams[info.Hostname]
+		master.mu.RUnlock()
+
+		if !ok {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "agent offline"})
+		}
+
+		// Create a response channel
+		respCh := make(chan *pb.ExecResponse, 1)
+		execChannels.Store(req.ContainerId, respCh)
+		defer execChannels.Delete(req.ContainerId)
+
+		err := stream.Send(&pb.MasterMessage{
+			Payload: &pb.MasterMessage_ExecRequest{
+				ExecRequest: &pb.ExecRequest{
+					ContainerId: req.ContainerId,
+					Command:     req.Command,
+				},
+			},
+		})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to send exec request"})
+		}
+
+		// Wait for response with timeout
+		select {
+		case resp := <-respCh:
+			return c.JSON(resp)
+		case <-time.After(10 * time.Second):
+			return c.Status(fiber.StatusGatewayTimeout).JSON(fiber.Map{"error": "exec timed out"})
+		}
 	})
 
 	return app

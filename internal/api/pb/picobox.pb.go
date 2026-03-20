@@ -28,6 +28,8 @@ type AgentMessage struct {
 	//
 	//	*AgentMessage_Metrics
 	//	*AgentMessage_DeployResponse
+	//	*AgentMessage_StopResponse
+	//	*AgentMessage_ExecResponse
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -88,6 +90,24 @@ func (x *AgentMessage) GetDeployResponse() *DeployResponse {
 	return nil
 }
 
+func (x *AgentMessage) GetStopResponse() *StopResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_StopResponse); ok {
+			return x.StopResponse
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetExecResponse() *ExecResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_ExecResponse); ok {
+			return x.ExecResponse
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -100,9 +120,21 @@ type AgentMessage_DeployResponse struct {
 	DeployResponse *DeployResponse `protobuf:"bytes,2,opt,name=deploy_response,json=deployResponse,proto3,oneof"`
 }
 
+type AgentMessage_StopResponse struct {
+	StopResponse *StopResponse `protobuf:"bytes,3,opt,name=stop_response,json=stopResponse,proto3,oneof"`
+}
+
+type AgentMessage_ExecResponse struct {
+	ExecResponse *ExecResponse `protobuf:"bytes,4,opt,name=exec_response,json=execResponse,proto3,oneof"`
+}
+
 func (*AgentMessage_Metrics) isAgentMessage_Payload() {}
 
 func (*AgentMessage_DeployResponse) isAgentMessage_Payload() {}
+
+func (*AgentMessage_StopResponse) isAgentMessage_Payload() {}
+
+func (*AgentMessage_ExecResponse) isAgentMessage_Payload() {}
 
 // MasterMessage is sent from the Master to the PicoBox Daemon.
 type MasterMessage struct {
@@ -111,6 +143,8 @@ type MasterMessage struct {
 	//
 	//	*MasterMessage_HeartbeatAck
 	//	*MasterMessage_DeployRequest
+	//	*MasterMessage_StopRequest
+	//	*MasterMessage_ExecRequest
 	Payload       isMasterMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -171,6 +205,24 @@ func (x *MasterMessage) GetDeployRequest() *ContainerSpec {
 	return nil
 }
 
+func (x *MasterMessage) GetStopRequest() *StopRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*MasterMessage_StopRequest); ok {
+			return x.StopRequest
+		}
+	}
+	return nil
+}
+
+func (x *MasterMessage) GetExecRequest() *ExecRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*MasterMessage_ExecRequest); ok {
+			return x.ExecRequest
+		}
+	}
+	return nil
+}
+
 type isMasterMessage_Payload interface {
 	isMasterMessage_Payload()
 }
@@ -183,9 +235,21 @@ type MasterMessage_DeployRequest struct {
 	DeployRequest *ContainerSpec `protobuf:"bytes,2,opt,name=deploy_request,json=deployRequest,proto3,oneof"`
 }
 
+type MasterMessage_StopRequest struct {
+	StopRequest *StopRequest `protobuf:"bytes,3,opt,name=stop_request,json=stopRequest,proto3,oneof"`
+}
+
+type MasterMessage_ExecRequest struct {
+	ExecRequest *ExecRequest `protobuf:"bytes,4,opt,name=exec_request,json=execRequest,proto3,oneof"`
+}
+
 func (*MasterMessage_HeartbeatAck) isMasterMessage_Payload() {}
 
 func (*MasterMessage_DeployRequest) isMasterMessage_Payload() {}
+
+func (*MasterMessage_StopRequest) isMasterMessage_Payload() {}
+
+func (*MasterMessage_ExecRequest) isMasterMessage_Payload() {}
 
 // NodeMetrics represents the hardware health and usage of a PicoBox node.
 type NodeMetrics struct {
@@ -447,18 +511,256 @@ func (x *DeployResponse) GetErrorMessage() string {
 	return ""
 }
 
+// StopRequest asks the agent to terminate a specific container.
+type StopRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"` // e.g. SIGKILL instead of SIGTERM
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopRequest) Reset() {
+	*x = StopRequest{}
+	mi := &file_picobox_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopRequest) ProtoMessage() {}
+
+func (x *StopRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_picobox_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
+func (*StopRequest) Descriptor() ([]byte, []int) {
+	return file_picobox_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *StopRequest) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *StopRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+// StopResponse indicates the result of a stop operation.
+type StopResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopResponse) Reset() {
+	*x = StopResponse{}
+	mi := &file_picobox_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopResponse) ProtoMessage() {}
+
+func (x *StopResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_picobox_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
+func (*StopResponse) Descriptor() ([]byte, []int) {
+	return file_picobox_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StopResponse) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *StopResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *StopResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+type ExecRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Command       string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecRequest) Reset() {
+	*x = ExecRequest{}
+	mi := &file_picobox_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecRequest) ProtoMessage() {}
+
+func (x *ExecRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_picobox_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
+func (*ExecRequest) Descriptor() ([]byte, []int) {
+	return file_picobox_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ExecRequest) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ExecRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+type ExecResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Output        string                 `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecResponse) Reset() {
+	*x = ExecResponse{}
+	mi := &file_picobox_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecResponse) ProtoMessage() {}
+
+func (x *ExecResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_picobox_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
+func (*ExecResponse) Descriptor() ([]byte, []int) {
+	return file_picobox_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ExecResponse) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ExecResponse) GetOutput() string {
+	if x != nil {
+		return x.Output
+	}
+	return ""
+}
+
+func (x *ExecResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ExecResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_picobox_proto protoreflect.FileDescriptor
 
 const file_picobox_proto_rawDesc = "" +
 	"\n" +
-	"\rpicobox.proto\x12\apicobox\"\x8f\x01\n" +
+	"\rpicobox.proto\x12\apicobox\"\x8b\x02\n" +
 	"\fAgentMessage\x120\n" +
 	"\ametrics\x18\x01 \x01(\v2\x14.picobox.NodeMetricsH\x00R\ametrics\x12B\n" +
-	"\x0fdeploy_response\x18\x02 \x01(\v2\x17.picobox.DeployResponseH\x00R\x0edeployResponseB\t\n" +
-	"\apayload\"\x9e\x01\n" +
+	"\x0fdeploy_response\x18\x02 \x01(\v2\x17.picobox.DeployResponseH\x00R\x0edeployResponse\x12<\n" +
+	"\rstop_response\x18\x03 \x01(\v2\x15.picobox.StopResponseH\x00R\fstopResponse\x12<\n" +
+	"\rexec_response\x18\x04 \x01(\v2\x15.picobox.ExecResponseH\x00R\fexecResponseB\t\n" +
+	"\apayload\"\x94\x02\n" +
 	"\rMasterMessage\x12A\n" +
 	"\rheartbeat_ack\x18\x01 \x01(\v2\x1a.picobox.HeartbeatResponseH\x00R\fheartbeatAck\x12?\n" +
-	"\x0edeploy_request\x18\x02 \x01(\v2\x16.picobox.ContainerSpecH\x00R\rdeployRequestB\t\n" +
+	"\x0edeploy_request\x18\x02 \x01(\v2\x16.picobox.ContainerSpecH\x00R\rdeployRequest\x129\n" +
+	"\fstop_request\x18\x03 \x01(\v2\x14.picobox.StopRequestH\x00R\vstopRequest\x129\n" +
+	"\fexec_request\x18\x04 \x01(\v2\x14.picobox.ExecRequestH\x00R\vexecRequestB\t\n" +
 	"\apayload\"\xd1\x01\n" +
 	"\vNodeMetrics\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12*\n" +
@@ -478,7 +780,22 @@ const file_picobox_proto_rawDesc = "" +
 	"\x0eDeployResponse\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage2U\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"F\n" +
+	"\vStopRequest\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"p\n" +
+	"\fStopResponse\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"J\n" +
+	"\vExecRequest\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x18\n" +
+	"\acommand\x18\x02 \x01(\tR\acommand\"\x88\x01\n" +
+	"\fExecResponse\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x16\n" +
+	"\x06output\x18\x02 \x01(\tR\x06output\x12\x18\n" +
+	"\asuccess\x18\x03 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage2U\n" +
 	"\fAgentService\x12E\n" +
 	"\x0eControlChannel\x12\x15.picobox.AgentMessage\x1a\x16.picobox.MasterMessage\"\x00(\x010\x01B6Z4github.com/henny-cho/picobox/internal/api/pb;picoboxb\x06proto3"
 
@@ -494,7 +811,7 @@ func file_picobox_proto_rawDescGZIP() []byte {
 	return file_picobox_proto_rawDescData
 }
 
-var file_picobox_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_picobox_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_picobox_proto_goTypes = []any{
 	(*AgentMessage)(nil),      // 0: picobox.AgentMessage
 	(*MasterMessage)(nil),     // 1: picobox.MasterMessage
@@ -502,19 +819,27 @@ var file_picobox_proto_goTypes = []any{
 	(*HeartbeatResponse)(nil), // 3: picobox.HeartbeatResponse
 	(*ContainerSpec)(nil),     // 4: picobox.ContainerSpec
 	(*DeployResponse)(nil),    // 5: picobox.DeployResponse
+	(*StopRequest)(nil),       // 6: picobox.StopRequest
+	(*StopResponse)(nil),      // 7: picobox.StopResponse
+	(*ExecRequest)(nil),       // 8: picobox.ExecRequest
+	(*ExecResponse)(nil),      // 9: picobox.ExecResponse
 }
 var file_picobox_proto_depIdxs = []int32{
 	2, // 0: picobox.AgentMessage.metrics:type_name -> picobox.NodeMetrics
 	5, // 1: picobox.AgentMessage.deploy_response:type_name -> picobox.DeployResponse
-	3, // 2: picobox.MasterMessage.heartbeat_ack:type_name -> picobox.HeartbeatResponse
-	4, // 3: picobox.MasterMessage.deploy_request:type_name -> picobox.ContainerSpec
-	0, // 4: picobox.AgentService.ControlChannel:input_type -> picobox.AgentMessage
-	1, // 5: picobox.AgentService.ControlChannel:output_type -> picobox.MasterMessage
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	7, // 2: picobox.AgentMessage.stop_response:type_name -> picobox.StopResponse
+	9, // 3: picobox.AgentMessage.exec_response:type_name -> picobox.ExecResponse
+	3, // 4: picobox.MasterMessage.heartbeat_ack:type_name -> picobox.HeartbeatResponse
+	4, // 5: picobox.MasterMessage.deploy_request:type_name -> picobox.ContainerSpec
+	6, // 6: picobox.MasterMessage.stop_request:type_name -> picobox.StopRequest
+	8, // 7: picobox.MasterMessage.exec_request:type_name -> picobox.ExecRequest
+	0, // 8: picobox.AgentService.ControlChannel:input_type -> picobox.AgentMessage
+	1, // 9: picobox.AgentService.ControlChannel:output_type -> picobox.MasterMessage
+	9, // [9:10] is the sub-list for method output_type
+	8, // [8:9] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_picobox_proto_init() }
@@ -525,10 +850,14 @@ func file_picobox_proto_init() {
 	file_picobox_proto_msgTypes[0].OneofWrappers = []any{
 		(*AgentMessage_Metrics)(nil),
 		(*AgentMessage_DeployResponse)(nil),
+		(*AgentMessage_StopResponse)(nil),
+		(*AgentMessage_ExecResponse)(nil),
 	}
 	file_picobox_proto_msgTypes[1].OneofWrappers = []any{
 		(*MasterMessage_HeartbeatAck)(nil),
 		(*MasterMessage_DeployRequest)(nil),
+		(*MasterMessage_StopRequest)(nil),
+		(*MasterMessage_ExecRequest)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -536,7 +865,7 @@ func file_picobox_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_picobox_proto_rawDesc), len(file_picobox_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1,4 +1,4 @@
-name: PicoBox CI/CD Pipeline
+name: PicoBox CI Pipeline
 
 on:
   push:
@@ -6,38 +6,69 @@ on:
   pull_request:
     branches: [ "main", "develop" ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  build:
+  setup:
+    name: Prepare Environment
     runs-on: ubuntu-latest
-
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Generate Cache Key
+        id: cache-key
+        run: echo "key=picobox-tools-${{ runner.os }}-${{ hashFiles('scripts/versions.sh') }}" >> $GITHUB_OUTPUT
 
-      - name: Setup Go Environment
-        uses: actions/setup-go@v5
+  lint:
+    name: Linting
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-picobox
+      - name: Run Linter
+        run: ./scripts/task.sh lint
+
+  test:
+    name: Unit Tests
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-picobox
+      - name: Run Tests
+        run: ./scripts/task.sh test unit
+
+  build:
+    name: Build Binaries
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-picobox
+      - name: Build All
+        run: ./scripts/task.sh build
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v4
         with:
-          go-version: '1.26.1'
-          cache: true
+          name: picobox-binaries
+          path: bin/
 
-      - name: Setup Node.js Environment
-        uses: actions/setup-node@v4
+  e2e:
+    name: E2E Verification
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-picobox
+      - name: Download Binaries
+        uses: actions/download-artifact@v4
         with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: 'web/package-lock.json'
-
-      - name: Give execution permission to scripts
-        run: chmod +x ./script/setup.sh ./script/build.sh ./script/build_n_test.sh
-
-      - name: Run Environment Setup
-        run: ./script/setup.sh
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.11.3
-          working-directory: .
-
-      - name: Run Validation Loop
-        run: bash ./script/build_n_test.sh --fullstack
+          name: picobox-binaries
+          path: bin/
+      - name: Ensure permissions
+        run: chmod +x bin/*
+      - name: Run E2E Tests
+        run: ./scripts/task.sh e2e

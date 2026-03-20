@@ -10,21 +10,29 @@ describe('NodeCard Component', () => {
     disk_io_wait: 0.1,
   }
 
+  const mockContainers = [
+    {
+      deploy_response: { container_id: 'test-c1', success: true, error_message: '' },
+      status: 'Running',
+      hostname: 'test-node-01'
+    }
+  ]
+
   it('renders node hostname correctly', () => {
-    render(<NodeCard node={mockNode} />)
+    render(<NodeCard node={mockNode} containers={mockContainers} />)
     const hostnameTitle = screen.getByText('test-node-01')
     expect(hostnameTitle).toBeInTheDocument()
   })
 
   it('calculates and displays memory usage correctly', () => {
-    render(<NodeCard node={mockNode} />)
-    // 512 MB / 2048 MB = 25%
-    const memUsageText = screen.getByText(/25.0%/)
+    render(<NodeCard node={mockNode} containers={mockContainers} />)
+    // 512 MB / 2048 MB = 0.5G / 2.0G
+    const memUsageText = screen.getByText(/0.5G \/ 2.0G/)
     expect(memUsageText).toBeInTheDocument()
   })
 
   it('displays CPU usage properly formatted', () => {
-    render(<NodeCard node={mockNode} />)
+    render(<NodeCard node={mockNode} containers={mockContainers} />)
     const cpuUsageText = screen.getByText(/45.5%/)
     expect(cpuUsageText).toBeInTheDocument()
   })

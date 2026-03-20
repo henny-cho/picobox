@@ -57,9 +57,9 @@ func (c *CgroupsManager) AddProcess(containerID string, pid int) error {
 // When processes within this cgroup exceed the limit, the OOM killer is triggered by the kernel.
 func (c *CgroupsManager) SetMemoryLimit(containerID string, maxBytes uint64) error {
 	memMaxPath := filepath.Join(c.basePath, PicoBoxCgroupPrefix, containerID, "memory.max")
-	
+
 	limitStr := strconv.FormatUint(maxBytes, 10)
-	
+
 	if err := os.WriteFile(memMaxPath, []byte(limitStr), 0644); err != nil {
 		return fmt.Errorf("failed to write memory limit to %s: %w", memMaxPath, err)
 	}
