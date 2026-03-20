@@ -39,10 +39,26 @@ export default function DeployModal({ isOpen, onClose, nodes, onDeploy, editData
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [error, setError] = useState('')
 
+  const validate = () => {
+    if (!/^[a-z0-9-]+$/.test(formData.container_id)) {
+      throw new Error('Container ID must be lowercase alphanumeric or hyphens')
+    }
+    if (!formData.rootfs_image_url) {
+      throw new Error('RootFS path is required')
+    }
+    if (formData.memory_max_bytes < 4194304) {
+      throw new Error('Memory limit must be at least 4MB')
+    }
+    if (formData.cpu_max_quota < 1000) {
+      throw new Error('CPU quota must be at least 1000')
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setStatus('loading')
     try {
+      validate()
       await onDeploy(formData)
       setStatus('success')
       setTimeout(() => {
@@ -118,8 +134,10 @@ export default function DeployModal({ isOpen, onClose, nodes, onDeploy, editData
                     type="text"
                     value={formData.container_id}
                     onChange={e => setFormData({...formData, container_id: e.target.value})}
+                    placeholder="e.g. web-app-01"
                     className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all"
                   />
+                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">Only lowercase, numbers, and hyphens.</p>
                 </div>
               </div>
 
@@ -128,13 +146,14 @@ export default function DeployModal({ isOpen, onClose, nodes, onDeploy, editData
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                   <Layers className="w-3.5 h-3.5" /> RootFS path / URL
                 </label>
-                <input
-                  type="text"
-                  value={formData.rootfs_image_url}
-                  onChange={e => setFormData({...formData, rootfs_image_url: e.target.value})}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-white font-mono text-sm focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all"
-                  placeholder="/var/lib/picobox/images/alpine"
-                />
+                  <input
+                    type="text"
+                    value={formData.rootfs_image_url}
+                    onChange={e => setFormData({...formData, rootfs_image_url: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-white font-mono text-sm focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all"
+                    placeholder="/path/to/rootfs or .tar.gz"
+                  />
+                  <p className="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">Supports directories or .tar.gz images.</p>
               </div>
 
               {/* Command */}

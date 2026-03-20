@@ -7,7 +7,8 @@ import Link from 'next/link'
 
 function TerminalContent() {
   const searchParams = useSearchParams()
-  const containerId = searchParams.get('container_id') || 'Global-Session'
+  	const containerId = searchParams.get('container_id') || 'Global-Session'
+	const hostname = searchParams.get('hostname') || ''
 
   const [history, setHistory] = useState<string[]>([
     `PicoBox Edge Shell v1.0.4 [Target: ${containerId}]`,
@@ -15,9 +16,11 @@ function TerminalContent() {
     'Type "help" for local commands or any shell command for the container.',
     ''
   ])
-  const [input, setInput] = useState('')
-  const [isExecuting, setIsExecuting] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  	const [input, setInput] = useState('')
+	const [isExecuting, setIsExecuting] = useState(false)
+	const [cmdHistory, setCmdHistory] = useState<string[]>([])
+	const [historyIdx, setHistoryIdx] = useState(-1)
+	const scrollRef = useRef<HTMLDivElement>(null)
 
   const getApiUrl = (path: string) => {
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
@@ -54,11 +57,15 @@ function TerminalContent() {
 
     // Call /api/exec
     try {
+      setCmdHistory(prev => [rawInput, ...prev])
+      setHistoryIdx(-1)
+
       const res = await fetch(getApiUrl('/api/exec'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           container_id: containerId,
+          hostname: hostname,
           command: rawInput
         })
       })
@@ -133,6 +140,21 @@ function TerminalContent() {
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                const newIdx = Math.min(historyIdx + 1, cmdHistory.length - 1)
+                if (newIdx >= 0) {
+                  setHistoryIdx(newIdx)
+                  setInput(cmdHistory[newIdx])
+                }
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                const newIdx = Math.max(historyIdx - 1, -1)
+                setHistoryIdx(newIdx)
+                setInput(newIdx === -1 ? '' : cmdHistory[newIdx])
+              }
+            }}
             className="flex-1 bg-transparent border-none outline-none text-white font-mono placeholder-slate-700 disabled:opacity-50"
             placeholder={isExecuting ? 'Waiting for agent output...' : 'Enter command...'}
           />

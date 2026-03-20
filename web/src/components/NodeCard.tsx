@@ -127,7 +127,7 @@ export default function NodeCard({ node, containers, onStop, onStart, onEdit }: 
                   {!isStopped && (
                     <>
                       <button
-                        onClick={() => window.location.href = `/terminal?container_id=${info.container_id}`}
+                        onClick={() => window.location.href = `/terminal?container_id=${info.container_id}&hostname=${node.hostname}`}
                         className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-cyan-400 transition-all"
                         title="Shell"
                       >

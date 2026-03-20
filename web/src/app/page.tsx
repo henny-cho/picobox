@@ -108,8 +108,12 @@ export default function Dashboard() {
   const activeNodesCount = Object.keys(nodes).length
   const activeContainersCount = Object.keys(containers).filter(id => containers[id].status === 'Running').length
 
-  return (
-    <div className="max-w-7xl mx-auto space-y-10 pb-20">
+  	return (
+		<motion.div
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			className="max-w-7xl mx-auto space-y-10 pb-20"
+		>
       {/* Upper Dashboard Actions */}
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -139,21 +143,27 @@ export default function Dashboard() {
       {/* Stats Quick View */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { icon: Activity, label: 'CPU Load', value: '12.4%', color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
-          { icon: Database, label: 'Memory', value: '4.2 GB', color: 'text-blue-400', bg: 'bg-blue-500/10' },
-          { icon: BoxIcon, label: 'Containers', value: activeContainersCount.toString(), color: 'text-purple-400', bg: 'bg-purple-500/10' },
-          { icon: Plus, label: 'Nodes', value: `${activeNodesCount}/${activeNodesCount}`, color: 'text-green-400', bg: 'bg-green-500/10' },
-        ].map((stat, i) => (
-          <div key={i} className="glass p-6 rounded-[2rem] flex items-center gap-5 transition-transform hover:scale-[1.02]">
-             <div className={`w-14 h-14 ${stat.bg} rounded-2xl flex items-center justify-center`}>
-                <stat.icon className={`w-7 h-7 ${stat.color}`} />
-             </div>
-             <div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{stat.label}</p>
-                <p className="text-3xl font-black text-white tracking-tight">{stat.value}</p>
-             </div>
-          </div>
-        ))}
+          				{ icon: Activity, label: 'CPU Load', value: '12.4%', color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+				{ icon: Database, label: 'Memory', value: '4.2 GB', color: 'text-blue-400', bg: 'bg-blue-500/10' },
+				{ icon: BoxIcon, label: 'Containers', value: activeContainersCount.toString(), color: 'text-purple-400', bg: 'bg-purple-500/10' },
+				{ icon: Plus, label: 'Nodes', value: `${activeNodesCount}/${activeNodesCount}`, color: 'text-green-400', bg: 'bg-green-500/10' },
+			].map((stat, i) => (
+				<motion.div
+					key={i}
+					initial={{ opacity: 0, scale: 0.9 }}
+					animate={{ opacity: 1, scale: 1 }}
+					transition={{ delay: i * 0.1 }}
+					className="glass p-6 rounded-[2rem] flex items-center gap-5 transition-transform hover:scale-[1.02]"
+				>
+					 <div className={`w-14 h-14 ${stat.bg} rounded-2xl flex items-center justify-center`}>
+							<stat.icon className={`w-7 h-7 ${stat.color}`} />
+					 </div>
+					 <div>
+							<p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{stat.label}</p>
+							<p className="text-3xl font-black text-white tracking-tight">{stat.value}</p>
+					 </div>
+				</motion.div>
+			))}
       </div>
 
       {/* Node Grid */}
@@ -215,6 +225,6 @@ export default function Dashboard() {
         onDeploy={handleDeploy}
         editData={editingContainer}
       />
-    </div>
+    </motion.div>
   )
 }
