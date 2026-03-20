@@ -47,6 +47,9 @@ print_usage() {
     echo -e "  ${CYAN}e2e${NC}             Shortcut for running the full-stack E2E verification loop."
     echo -e "  ${CYAN}run${NC}             Start Master, Agent, and Web Dashboard in development mode."
     echo -e "  ${CYAN}stop${NC}            Stop all background PicoBox processes."
+    echo -e "  ${CYAN}doctor${NC}          Verify system environment (Kernel, Cgroups, Root)."
+    echo -e "  ${CYAN}logs [service]${NC}  Show logs for all or specific service (master, agent, web)."
+    echo -e "  ${CYAN}release${NC}         Build production-ready binaries and web bundle."
     echo -e "  ${CYAN}clean${NC}           Remove build artifacts, logs, and temporary storage."
     echo -e "  ${CYAN}tidy${NC}            Run 'go mod tidy' for dependency management."
     echo -e "  ${CYAN}lint${NC}            Run 'golangci-lint' to ensure code quality.\n"
@@ -236,6 +239,71 @@ do_stop() {
     log_success "All stopped."
 }
 
+do_doctor() {
+    log_info "Diagnosing PicoBox Environment..."
+    local ERRORS=0
+
+    # 1. Kernel Version
+    local KERNEL=$(uname -r | cut -d. -f1,2)
+    log_info "Kernel: $(uname -r)"
+    if (( $(echo "$KERNEL < 5.10" | bc -l) )); then
+        log_warn "Kernel version < 5.10 might have limited Cgroups v2 support."
+    fi
+
+    # 2. Cgroups v2
+    if [ -f "/sys/fs/cgroup/cgroup.controllers" ]; then
+        log_success "Cgroups v2 is enabled."
+    else
+        log_error "Cgroups v2 is not detected. Ensure systemd.unified_cgroup_hierarchy=1."
+        ERRORS=$((ERRORS+1))
+    fi
+
+    # 3. Privileges
+    if [ "$EUID" -ne 0 ]; then
+        log_warn "Not running as root. Container features (Mount, PivotRoot) will fail."
+    else
+        log_success "Running with root privileges."
+    fi
+
+    # 4. Binary checks
+    [ ! -f "$PICOBOXD_BIN" ] && log_warn "Agent binary missing. Run './scripts/task.sh build'."
+    [ ! -f "$PICOBOX_MASTER_BIN" ] && log_warn "Master binary missing. Run './scripts/task.sh build'."
+
+    if [ $ERRORS -eq 0 ]; then
+        log_success "Doctor found no critical issues."
+    else
+        log_error "Doctor found $ERRORS critical issues."
+    fi
+}
+
+do_logs() {
+    local SERVICE=${1:-"all"}
+    log_info "Showing logs for $SERVICE..."
+    case "$SERVICE" in
+        master) tail -f "$LOG_DIR/master.log" ;;
+        agent)  tail -f "$LOG_DIR/agent.log" ;;
+        web)    tail -f "$LOG_DIR/web.log" ;;
+        *)      tail -f "$LOG_DIR"/*.log ;;
+    esac
+}
+
+do_release() {
+    log_info "Building Production Release..."
+    do_clean
+    # 1. Build optimized Go binaries
+    mkdir -p "$BIN_DIR"
+    export CGO_ENABLED=0
+    go build -ldflags="-s -w" -o "$PICOBOXD_BIN" ./cmd/picoboxd
+    go build -ldflags="-s -w" -o "$PICOBOX_MASTER_BIN" ./cmd/picobox-master
+    log_success "Stripped Go binaries built."
+
+    # 2. Build production Web
+    if [ -d "web" ]; then
+        (cd web && npm ci && npm run build)
+        log_success "Production Web build completed."
+    fi
+}
+
 do_clean() {
     log_info "Cleaning..."
     rm -rf bin/ logs/ storage/ web/.next web/node_modules
@@ -251,6 +319,9 @@ case "$1" in
     e2e)    do_e2e ;;
     run)    do_run ;;
     stop)   do_stop ;;
+    doctor) do_doctor ;;
+    logs)   do_logs "$2" ;;
+    release) do_release ;;
     clean)  do_clean ;;
     tidy)   do_tidy ;;
     lint)   do_lint ;;

@@ -39,3 +39,9 @@ EOF
 chmod +x "$ROOTFS_DIR/test-init.sh"
 
 log_success "Minimal RootFS prepared at $ROOTFS_DIR."
+
+# 5. Create tarball version for testing agent's new feature
+TARBALL_PATH="$ROOTFS_DIR.tar.gz"
+log_info "Creating tarball: $TARBALL_PATH..."
+(cd "$ROOTFS_DIR" && tar -czf "$TARBALL_PATH" .)
+log_success "Tarball prepared at $TARBALL_PATH."
