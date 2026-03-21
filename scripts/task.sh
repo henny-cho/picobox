@@ -46,7 +46,7 @@ print_usage() {
     echo -e "  ${CYAN}setup [ci]${NC}      Install system dependencies, toolchains, and plugins."
     echo -e "                    Use 'ci' flag in automated environments."
     echo -e "  ${CYAN}build${NC}           Generate Proto code and build Go & Web binaries."
-    echo -e "  ${CYAN}test [mode]${NC}     Run test suites. Modes: ${GREEN}unit${NC} (default), ${GREEN}e2e${NC}, ${GREEN}local${NC} (act)."
+    echo -e "  ${CYAN}test [mode]${NC}     Run test suites. Modes: ${GREEN}unit${NC} (default), ${GREEN}e2e${NC}, ${GREEN}regression${NC}, ${GREEN}local${NC} (act)."
     echo -e "  ${CYAN}e2e${NC}             Shortcut for running the full-stack E2E verification loop."
     echo -e "  ${CYAN}run${NC}             Start Master, Agent, and Web Dashboard in development mode."
     echo -e "  ${CYAN}stop${NC}            Stop all background PicoBox processes."
@@ -195,6 +195,13 @@ do_test() {
     local MODE=$1 # "unit", "e2e", or "local"
     case "$MODE" in
         e2e) do_e2e ;;
+        regression)
+            log_info "Running Full Regression Suite (Lint -> Unit -> E2E)..."
+            do_lint || exit 1
+            do_test unit || exit 1
+            do_e2e || exit 1
+            log_success "Full Regression Suite Passed!"
+            ;;
         local)
             log_info "Running Local CI Simulation (act)..."
             if ! command -v act &> /dev/null; then
