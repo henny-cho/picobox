@@ -259,8 +259,7 @@ do_e2e() {
     curl -s -X POST http://localhost:3000/api/deploy \
          -H "Authorization: Bearer $PICOBOX_API_TOKEN" \
          -H "Content-Type: application/json" \
-         -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"sh -c \\\"echo 'hello from container'; sleep 2\\\"\"}"
-
+         -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"sh -c \\\"while true; do echo 'hello from container'; sleep 2; done\\\"\"}"
 
     log_info "Verifying Runtime and Logs..."
     sleep 8
@@ -293,7 +292,46 @@ do_e2e() {
         cat "$LOG_DIR/master_e2e.log"
         exit 1
     fi
+
+    # Test 3: Web Terminal (WebSocket)
+    log_info "Testing Web Terminal (WebSocket)..."
+    python3 -u -c "
+import asyncio, websockets, sys
+async def test_ws():
+    try:
+        uri = f'ws://localhost:3000/ws/terminal?container_id=test&token=$PICOBOX_API_TOKEN'
+        async with websockets.connect(uri) as ws:
+            conn_msg = await ws.recv() # Connection message
+            print(f'Conn msg: {conn_msg.strip()}')
+            await ws.send('echo WS_TEST_OK')
+            response = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            print(f'Response: {response.strip()}')
+            if 'WS_TEST_OK' in response:
+                print('PASS')
+                return
+            print(f'FAIL: Unexpected response: {response}')
+            sys.exit(1)
+    except Exception as e:
+        print(f'FAIL: {e}')
+        sys.exit(1)
+asyncio.run(test_ws())
+" > "$LOG_DIR/ws_test.log" 2>&1 || true
+
+
+    if grep -q "PASS" "$LOG_DIR/ws_test.log"; then
+        log_success "Web Terminal WebSocket Test Passed!"
+    else
+        # We might need to install websockets if missing. Fallback if python lib fails.
+        if grep -q "No module named" "$LOG_DIR/ws_test.log"; then
+            log_warn "Skipping Web Terminal test (websockets module missing)"
+        else
+            log_error "Web Terminal WebSocket Test Failed!"
+            cat "$LOG_DIR/ws_test.log"
+            exit 1
+        fi
+    fi
 }
+
 
 do_run() {
     log_info "Starting Full-Stack PicoBox Environment..."

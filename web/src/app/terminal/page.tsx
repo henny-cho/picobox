@@ -1,93 +1,108 @@
 'use client'
 
-import React, { useState, useEffect, useRef, Suspense } from 'react'
+import React, { useEffect, useRef, Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Terminal as TerminalIcon, ShieldAlert, Cpu, Database, Server, Info, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import '@xterm/xterm/css/xterm.css'
 
 function TerminalContent() {
   const searchParams = useSearchParams()
-  	const containerId = searchParams.get('container_id') || 'Global-Session'
-	const hostname = searchParams.get('hostname') || ''
+  const containerId = searchParams.get('container_id') || 'Global-Session'
+  const hostname = searchParams.get('hostname') || ''
 
-  const [history, setHistory] = useState<string[]>([
-    `PicoBox Edge Shell v1.0.4 [Target: ${containerId}]`,
-    'Connected to cluster 192.168.219.100',
-    'Type "help" for local commands or any shell command for the container.',
-    ''
-  ])
-  	const [input, setInput] = useState('')
-	const [isExecuting, setIsExecuting] = useState(false)
-	const [cmdHistory, setCmdHistory] = useState<string[]>([])
-	const [historyIdx, setHistoryIdx] = useState(-1)
-	const scrollRef = useRef<HTMLDivElement>(null)
-
-  const getApiUrl = (path: string) => {
-    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-    return `http://${host}:3000${path}`
-  }
+  const terminalRef = useRef<HTMLDivElement>(null)
+  const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (!terminalRef.current) return
+
+    const term = new Terminal({
+      cursorBlink: true,
+      theme: {
+        background: '#0f172a', // slate-900 like
+        foreground: '#cbd5e1', // slate-300
+        cursor: '#22d3ee',     // cyan-400
+      },
+      fontFamily: 'monospace',
+      fontSize: 14,
+    })
+
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+    term.open(terminalRef.current)
+
+    // Timeout for font loading calculation
+    setTimeout(() => {
+      fitAddon.fit()
+    }, 50)
+
+    const handleResize = () => fitAddon.fit()
+    window.addEventListener('resize', handleResize)
+
+    term.writeln(`\x1b[1;36mPicoBox Edge Shell v1.0.4 [Target: ${containerId}]\x1b[0m`)
+    term.writeln(`Connecting to cluster...`)
+
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+    const wsProt = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const token = process.env.NEXT_PUBLIC_API_TOKEN || 'dev-secret-token'
+
+    const ws = new WebSocket(`${wsProt}//${host}:3000/ws/terminal?container_id=${containerId}&token=${token}`)
+
+    ws.onopen = () => {
+      setIsConnected(true)
+      term.writeln(`\x1b[1;32mWebSocket Connected.\x1b[0m`)
+      term.write('\r\n$ ')
     }
-  }, [history])
 
-  const handleCommand = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isExecuting) return
-
-    const rawInput = input.trim()
-    const cmd = rawInput.toLowerCase()
-    setHistory(prev => [...prev, `$ ${rawInput}`])
-    setInput('')
-    setIsExecuting(true)
-
-    if (cmd === 'clear') {
-      setHistory([])
-      setIsExecuting(false)
-      return
+    ws.onmessage = (event) => {
+      term.write(event.data)
+      term.write('$ ')
     }
 
-    if (cmd === 'help') {
-      setHistory(prev => [...prev, 'Available commands:', '  clear    - Clear terminal history', '  ls/ps/etc - Executed within container', ''])
-      setIsExecuting(false)
-      return
+    ws.onclose = () => {
+      setIsConnected(false)
+      term.writeln(`\x1b[1;31m\r\nConnection Closed.\x1b[0m`)
     }
 
-    // Call /api/exec
-    try {
-      setCmdHistory(prev => [rawInput, ...prev])
-      setHistoryIdx(-1)
+    let currentInput = ''
+    term.onData(data => {
+      if (ws.readyState !== WebSocket.OPEN) return
 
-      const res = await fetch(getApiUrl('/api/exec'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          container_id: containerId,
-          hostname: hostname,
-          command: rawInput
-        })
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          const lines = data.output.split('\n')
-          setHistory(prev => [...prev, ...lines, ''])
+      const code = data.charCodeAt(0)
+      if (code === 13) { // Enter
+        term.write('\r\n')
+        const cmd = currentInput.trim()
+        if (cmd.toLowerCase() === 'clear') {
+            term.clear()
+            term.write('$ ')
+        } else if (cmd) {
+            ws.send(cmd)
         } else {
-          setHistory(prev => [...prev, `Error: ${data.error_message}`, ''])
+            term.write('$ ')
         }
+        currentInput = ''
+      } else if (code === 127) { // Backspace
+        if (currentInput.length > 0) {
+          term.write('\b \b')
+          currentInput = currentInput.slice(0, -1)
+        }
+      } else if (code < 32 && code !== 9) {
+          // Ignore control characters
       } else {
-        const err = await res.json()
-        setHistory(prev => [...prev, `System Error: ${err.error}`, ''])
+        term.write(data)
+        currentInput += data
       }
-    } catch (err) {
-      setHistory(prev => [...prev, 'Failed to reach PicoBox Master.', ''])
-    } finally {
-      setIsExecuting(false)
+    })
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      ws.close()
+      term.dispose()
     }
-  }
+  }, [containerId])
 
   return (
     <div className="h-[calc(100vh-160px)] flex flex-col gap-6">
@@ -102,63 +117,25 @@ function TerminalContent() {
           </h1>
         </div>
         <div className="flex gap-4">
-           <div className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase text-slate-400 tracking-widest">
-              <Server className="w-3.5 h-3.5" /> Edge-Agent
-           </div>
-           <div className="px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase text-green-400 tracking-widest">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-              Connected
+           {hostname && (
+             <div className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                <Server className="w-3.5 h-3.5" /> Node: {hostname}
+             </div>
+           )}
+           <div className={`px-4 py-2 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isConnected ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-red-500/10 border border-red-500/20 text-red-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+              {isConnected ? 'Connected' : 'Disconnected'}
            </div>
         </div>
       </div>
 
-      <div className="flex-1 glass rounded-[2.5rem] bg-slate-950/80 border border-slate-800/50 p-6 font-mono text-sm overflow-hidden flex flex-col relative group">
-        <div className="absolute top-4 right-6 flex gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
+      <div className="flex-1 glass rounded-[2.5rem] bg-slate-950/80 border border-slate-800/50 p-6 flex flex-col relative group overflow-hidden">
+        <div className="absolute top-4 right-6 flex gap-2 opacity-30 group-hover:opacity-100 transition-opacity z-10">
            <div className="w-3 h-3 rounded-full bg-red-500/50" />
            <div className="w-3 h-3 rounded-full bg-yellow-500/50" />
            <div className="w-3 h-3 rounded-full bg-green-500/50" />
         </div>
-
-        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-1 scrollbar-hide mb-4">
-          {history.map((line, i) => (
-            <div key={i} className={line.startsWith('$') ? 'text-white font-bold' : 'text-slate-400 min-h-[1.2em]'}>
-              {line}
-            </div>
-          ))}
-          {isExecuting && (
-            <div className="text-cyan-500 animate-pulse font-bold tracking-widest text-[10px] uppercase">
-              Executing request...
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleCommand} className="flex gap-3 items-center bg-slate-900/50 p-4 rounded-2xl border border-slate-800 focus-within:border-cyan-500/50 transition-all">
-          <span className="text-cyan-400 font-bold shrink-0">$</span>
-          <input
-            autoFocus
-            disabled={isExecuting}
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                const newIdx = Math.min(historyIdx + 1, cmdHistory.length - 1)
-                if (newIdx >= 0) {
-                  setHistoryIdx(newIdx)
-                  setInput(cmdHistory[newIdx])
-                }
-              } else if (e.key === 'ArrowDown') {
-                e.preventDefault()
-                const newIdx = Math.max(historyIdx - 1, -1)
-                setHistoryIdx(newIdx)
-                setInput(newIdx === -1 ? '' : cmdHistory[newIdx])
-              }
-            }}
-            className="flex-1 bg-transparent border-none outline-none text-white font-mono placeholder-slate-700 disabled:opacity-50"
-            placeholder={isExecuting ? 'Waiting for agent output...' : 'Enter command...'}
-          />
-        </form>
+        <div ref={terminalRef} className="w-full h-full" />
       </div>
 
       <div className="flex gap-6">
@@ -169,7 +146,7 @@ function TerminalContent() {
                <p className="text-xs text-slate-400 mt-1 font-medium italic">Command executed via <span className="text-cyan-400">nsenter</span> in target container namespaces.</p>
             </div>
          </div>
-         <div className="px-8 flex items-center gap-10">
+         <div className="px-8 flex items-center gap-10 bg-slate-900 rounded-[2rem]">
             <div className="flex items-center gap-3">
                <Cpu className="w-4 h-4 text-slate-600" />
                <span className="text-xs font-bold text-slate-400 tracking-tight">Status: Active</span>

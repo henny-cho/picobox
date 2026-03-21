@@ -1,3 +1,5 @@
+.agents/
+
 # Build binaries and tools
 bin/
 /picobox-master

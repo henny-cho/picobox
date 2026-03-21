@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/websocket/v2"
 	pb "github.com/henny-cho/picobox/internal/api/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -190,6 +191,94 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 	app.Use(cors.New())
 
 	apiToken := os.Getenv("PICOBOX_API_TOKEN")
+
+	app.Use("/ws", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+
+	app.Get("/ws/terminal", websocket.New(func(c *websocket.Conn) {
+		containerId := c.Query("container_id")
+		token := c.Query("token")
+
+		if apiToken != "" && token != apiToken {
+			_ = c.WriteMessage(websocket.TextMessage, []byte("Unauthorized\r\n"))
+			_ = c.Close()
+			return
+		}
+
+		stateMutex.RLock()
+		info, exists := globalContainerState[containerId]
+		stateMutex.RUnlock()
+
+		if !exists {
+			_ = c.WriteMessage(websocket.TextMessage, []byte("Container not found\r\n"))
+			_ = c.Close()
+			return
+		}
+
+		master.mu.RLock()
+		sw, ok := master.streams[info.Hostname]
+		master.mu.RUnlock()
+
+		if !ok {
+			_ = c.WriteMessage(websocket.TextMessage, []byte("Agent offline\r\n"))
+			_ = c.Close()
+			return
+		}
+
+		_ = c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Connected to %s...\r\n", containerId)))
+
+		// Read loop
+		for {
+			_, msg, err := c.ReadMessage()
+			if err != nil {
+				break
+			}
+			command := strings.TrimSpace(string(msg))
+			if command == "" {
+				continue
+			}
+
+			respCh := make(chan *pb.ExecResponse, 1)
+			execChannels.Store(containerId, respCh)
+
+			err = sw.Send(&pb.MasterMessage{
+				Payload: &pb.MasterMessage_ExecRequest{
+					ExecRequest: &pb.ExecRequest{
+						ContainerId: containerId,
+						Command:     command,
+					},
+				},
+			})
+
+			if err != nil {
+				_ = c.WriteMessage(websocket.TextMessage, []byte("Failed to send command to agent\r\n"))
+				execChannels.Delete(containerId)
+				continue
+			}
+
+			select {
+			case resp := <-respCh:
+				output := resp.Output
+				if !resp.Success && output == "" {
+					output = resp.ErrorMessage
+				}
+				if output != "" {
+					// xterm expects \r\n for newlines
+					output = strings.ReplaceAll(output, "\n", "\r\n")
+					_ = c.WriteMessage(websocket.TextMessage, []byte(output+"\r\n"))
+				}
+				execChannels.Delete(containerId)
+			case <-time.After(10 * time.Second):
+				_ = c.WriteMessage(websocket.TextMessage, []byte("Timeout executing command\r\n"))
+				execChannels.Delete(containerId)
+			}
+		}
+	}))
 
 	api := app.Group("/api")
 
