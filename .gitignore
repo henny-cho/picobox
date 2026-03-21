@@ -1,11 +1,13 @@
-
 # Build binaries and tools
 bin/
+/picobox-master
+/picoboxd
 *.test
 *.out
 coverage.txt
 
 # Logs
+logs/
 *.log
 /tmp/master.log
 /tmp/daemon.log
@@ -13,14 +15,6 @@ coverage.txt
 # Dependency directories
 node_modules/
 vendor/
-
-# Next.js build output
-.next/
-out/
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # OS / IDE specific files
 .DS_Store
@@ -31,6 +25,5 @@ out/
 
 # Project specific artifacts
 web/.swc/
-storage/rootfs/
-logs/
-
+storage/
+*.db

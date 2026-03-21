@@ -32,6 +32,23 @@ log_warn() { echo -e "${YELLOW}[WARN] $1${NC}"; }
 log_error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
 
 # Environment Helpers
+check_command() {
+    local cmd=$1
+    local version_flag=${2:-"--version"}
+    local expected_version=$3
+
+    if ! command -v "$cmd" &> /dev/null; then
+        return 1
+    fi
+
+    if [ -n "$expected_version" ]; then
+        if [[ $("$cmd" "$version_flag" 2>&1) != *"$expected_version"* ]]; then
+            return 2
+        fi
+    fi
+    return 0
+}
+
 load_nvm() {
     export NVM_DIR="$HOME/.nvm"
     if [ -s "$NVM_DIR/nvm.sh" ]; then
@@ -44,7 +61,7 @@ load_nvm() {
 
 ensure_go() {
     if ! command -v go &> /dev/null; then
-        log_error "Go is not installed. Please run ./scripts/setup.sh first."
+        log_error "Go is not installed. Please run ./scripts/task.sh setup first."
     fi
 }
 
@@ -101,13 +118,14 @@ stop_process() {
         fi
     else
         local name=$identifier
-        if pgrep -x "$name" > /dev/null; then
+        # Use pgrep -f to be more flexible with path-based binaries
+        if pgrep -f "$name" > /dev/null; then
             log_info "Stopping all instances of $name..."
-            pkill -15 -x "$name" || true
+            pkill -15 -f "$name" || true
             sleep 2
-            if pgrep -x "$name" > /dev/null; then
+            if pgrep -f "$name" > /dev/null; then
                 log_warn "$name still running, forcing..."
-                pkill -9 -x "$name" || true
+                pkill -9 -f "$name" || true
             fi
             log_success "$name handled."
         fi

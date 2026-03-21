@@ -28,6 +28,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 source "$SCRIPT_DIR/versions.sh"
 
+# Add local tools and Go binaries to PATH
+export PATH="$ROOT_DIR/.tools/bin:$(go env GOPATH)/bin:$PATH"
+
 # Global Variables
 export PICOBOX_STORAGE_DIR="$ROOT_DIR/storage"
 export LOG_DIR="$ROOT_DIR/logs"
@@ -47,8 +50,9 @@ print_usage() {
     echo -e "  ${CYAN}e2e${NC}             Shortcut for running the full-stack E2E verification loop."
     echo -e "  ${CYAN}run${NC}             Start Master, Agent, and Web Dashboard in development mode."
     echo -e "  ${CYAN}stop${NC}            Stop all background PicoBox processes."
-    echo -e "  ${CYAN}doctor${NC}          Verify system environment (Kernel, Cgroups, Root)."
+    echo -e "  ${CYAN}doctor${NC}          Verify system environment (Kernel, Cgroups, Root, Tools)."
     echo -e "  ${CYAN}logs [service]${NC}  Show logs for all or specific service (master, agent, web)."
+    echo -e "                    Use 'clear' to remove all log files."
     echo -e "  ${CYAN}release${NC}         Build production-ready binaries and web bundle."
     echo -e "  ${CYAN}clean${NC}           Remove build artifacts, logs, and temporary storage."
     echo -e "  ${CYAN}tidy${NC}            Run 'go mod tidy' for dependency management."
@@ -58,6 +62,21 @@ print_usage() {
     echo -e "  ./scripts/task.sh build           # Full rebuild"
     echo -e "  ./scripts/task.sh test e2e        # Run integration tests"
     echo -e "  ./scripts/task.sh run             # Start dev environment"
+}
+
+do_check_deps() {
+    local cmd=$1
+    case "$cmd" in
+        build|test|release|lint)
+            ensure_go
+            check_command "protoc" "--version" "$PROTOC_VERSION" || log_warn "protoc $PROTOC_VERSION not found. Run 'task.sh setup'."
+            ;;
+        run|e2e)
+            ensure_go
+            [ ! -f "$PICOBOXD_BIN" ] || [ ! -f "$PICOBOX_MASTER_BIN" ] && log_warn "Binaries missing. Run 'task.sh build'."
+            ;;
+    esac
+    return 0
 }
 
 # --- Commands ---
@@ -72,16 +91,36 @@ do_setup() {
     if [ "$CI_MODE" = false ]; then
         CHECK_PACKAGES=(unzip libcap-dev curl python3 iproute2 sudo build-essential busybox)
         MISSING_PACKAGES=()
+
+        # Detect Package Manager
+        local PKG_MANAGER=""
+        if command -v apt-get &>/dev/null; then PKG_MANAGER="apt";
+        elif command -v pacman &>/dev/null; then PKG_MANAGER="pacman";
+        elif command -v dnf &>/dev/null; then PKG_MANAGER="dnf";
+        fi
+
         for pkg in "${CHECK_PACKAGES[@]}"; do
-            if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed"; then
-                MISSING_PACKAGES+=("$pkg")
-            fi
+            local installed=false
+            case "$PKG_MANAGER" in
+                apt) dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed" && installed=true ;;
+                pacman) pacman -Qi "$pkg" &>/dev/null && installed=true ;;
+                dnf) rpm -q "$pkg" &>/dev/null && installed=true ;;
+                *) # Generic fallback
+                   command -v "$pkg" &>/dev/null && installed=true
+                   ;;
+            esac
+            [ "$installed" = false ] && MISSING_PACKAGES+=("$pkg")
         done
 
         if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
             log_warn "Installing missing packages: ${MISSING_PACKAGES[*]}"
             SUDO="" && command -v sudo &> /dev/null && SUDO="sudo"
-            $SUDO DEBIAN_FRONTEND=noninteractive apt-get update -qq && $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "${MISSING_PACKAGES[@]}"
+            case "$PKG_MANAGER" in
+                apt) $SUDO DEBIAN_FRONTEND=noninteractive apt-get update -qq && $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "${MISSING_PACKAGES[@]}" ;;
+                pacman) $SUDO pacman -S --noconfirm "${MISSING_PACKAGES[@]}" ;;
+                dnf) $SUDO dnf install -y "${MISSING_PACKAGES[@]}" ;;
+                *) log_error "Unsupported package manager. Please install: ${MISSING_PACKAGES[*]}" ;;
+            esac
         fi
     fi
 
@@ -184,6 +223,7 @@ do_e2e() {
     $PICOBOX_MASTER_BIN > "$LOG_DIR/master_e2e.log" 2>&1 &
     local MASTER_PID=$!
     wait_for_port 127.0.0.1 50051
+    wait_for_port 127.0.0.1 3000
 
     $PICOBOXD_BIN > "$LOG_DIR/agent_e2e.log" 2>&1 &
     local AGENT_PID=$!
@@ -212,35 +252,37 @@ do_e2e() {
 do_run() {
     log_info "Starting Full-Stack PicoBox Environment..."
     do_stop
-    
+
     # 1. Pre-flight checks
-    if ss -tuln | grep -qE ":50051|:3000"; then
-        log_error "Port 50051 (gRPC) or 3000 (Web) is already in use. Please check 'lsof -i'."
+    if ss -tuln | grep -qE ":50051|:3000|:3001"; then
+        log_error "Port 50051 (gRPC), 3000 (Master REST), or 3001 (Web Dashboard) is already in use."
         exit 1
     fi
 
-    [ ! -f "$PICOBOXD_BIN" ] && do_build
+    do_check_deps run
     ./scripts/prepare-rootfs.sh > /dev/null
 
     # 2. Start Services
-    log_info "Launching Master Server..."
+    log_info "Launching Master Server (Port 50051, 3000)..."
     $PICOBOX_MASTER_BIN > "$LOG_DIR/master.log" 2>&1 &
     local MASTER_PID=$!
     wait_for_port 127.0.0.1 50051
+    wait_for_port 127.0.0.1 3000
 
     log_info "Launching PicoBox Agent..."
     $PICOBOXD_BIN > "$LOG_DIR/agent.log" 2>&1 &
     local AGENT_PID=$!
 
-    log_info "Launching Web Dashboard (Next.js Dev)..."
+    log_info "Launching Web Dashboard (Port 3001)..."
     (cd web && npm run dev) > "$LOG_DIR/web.log" 2>&1 &
     local WEB_PID=$!
-    wait_for_port 127.0.0.1 3000 30 # Longer timeout for Next.js
+    wait_for_port 127.0.0.1 3001 30 # Next.js on 3001
 
     log_success "All services are up and running!"
-    echo -e "${BOLD_WHITE}Dashboard:${NC} ${BLUE}http://localhost:3000${NC}"
-    echo -e "${BOLD_WHITE}Logs:${NC} ${CYAN}tail -f $LOG_DIR/*.log${NC}"
-    
+    echo -e "${BOLD_WHITE}Dashboard:${NC} ${BLUE}http://localhost:3001${NC}"
+    echo -e "${BOLD_WHITE}API:${NC}       ${BLUE}http://localhost:3000${NC}"
+    echo -e "${BOLD_WHITE}Logs:${NC}      ${CYAN}tail -f $LOG_DIR/*.log${NC}"
+
     # 3. Automatic Browser Open (Optional)
     if command -v xdg-open &> /dev/null; then
         xdg-open "http://localhost:3000" &> /dev/null &
@@ -248,7 +290,7 @@ do_run() {
 
     # 4. Process Monitoring & Signal Handling
     trap "log_info 'Shutting down...'; kill $MASTER_PID $AGENT_PID $WEB_PID 2>/dev/null; do_stop; exit 0" SIGINT SIGTERM EXIT
-    
+
     log_info "Monitoring processes (Press Ctrl+C to stop)..."
     while true; do
         if ! kill -0 $MASTER_PID 2>/dev/null; then log_error "Master server died unexpectedly!"; fi
@@ -262,8 +304,9 @@ do_stop() {
     log_info "Stopping processes..."
     stop_process "picobox-master"
     stop_process "picoboxd"
-    # For web dev server, it might be harder to pkill if not known
+    # Stop Next.js and its children
     pkill -f "next-dev" || true
+    pkill -f "next-server" || true
     log_success "All stopped."
 }
 
@@ -271,41 +314,37 @@ do_doctor() {
     log_info "Diagnosing PicoBox Environment..."
     local ERRORS=0
 
-    # 1. Kernel Version
+    # 1. Kernel & Cgroups
     local KERNEL=$(uname -r | cut -d. -f1,2)
     log_info "Kernel: $(uname -r)"
-    if (( $(echo "$KERNEL < 5.10" | bc -l) )); then
-        log_warn "Kernel version < 5.10 might have limited Cgroups v2 support."
-    fi
-
-    # 2. Cgroups v2 checking controllers
     if [ -f "/sys/fs/cgroup/cgroup.controllers" ]; then
-        log_success "Cgroups v2 is enabled. Controllers: $(cat /sys/fs/cgroup/cgroup.controllers)"
+        log_success "Cgroups v2 enabled."
     else
-        log_error "Cgroups v2 is not detected. Ensure systemd.unified_cgroup_hierarchy=1."
+        log_error "Cgroups v2 NOT detected."
         ERRORS=$((ERRORS+1))
     fi
 
-    # 2.1 OverlayFS Support
     if grep -q "overlay" /proc/filesystems; then
-        log_success "OverlayFS support detected in kernel."
+        log_success "OverlayFS supported."
     else
-        log_error "OverlayFS NOT detected. RootFS layering will fail."
+        log_error "OverlayFS NOT supported."
         ERRORS=$((ERRORS+1))
     fi
 
-    # 3. Privileges
-    if [ "$EUID" -ne 0 ]; then
-        log_warn "Not running as root. Container features (Mount, PivotRoot) will fail."
-        log_info "Recommendation: Run with 'sudo ./scripts/task.sh run' or 'sudo ./scripts/task.sh e2e'."
-    else
-        log_success "Running with root privileges."
-    fi
+    # 2. Privileges
+    [ "$EUID" -ne 0 ] && log_warn "Not running as root. Container features (Mount, PivotRoot) will fail." || log_success "Running with root privileges."
 
-    # 4. Dependency checks
-    log_info "Tools: Go $(go version | awk '{print $3}'), Node $(node -v 2>/dev/null || echo 'N/A'), NPM $(npm -v 2>/dev/null || echo 'N/A')"
-    [ ! -f "$PICOBOXD_BIN" ] && log_warn "Agent binary missing. Run './scripts/task.sh build'."
-    [ ! -f "$PICOBOX_MASTER_BIN" ] && log_warn "Master binary missing. Run './scripts/task.sh build'."
+    # 3. Toolchain Checks
+    log_info "--- Toolchain ---"
+    check_command "go" "version" "$GO_VERSION" && log_success "Go $GO_VERSION" || log_warn "Go version mismatch or missing."
+    check_command "node" "-v" "$NODE_VERSION" && log_success "Node $NODE_VERSION" || log_warn "Node version mismatch or missing."
+    check_command "protoc" "--version" "$PROTOC_VERSION" && log_success "Protoc $PROTOC_VERSION" || log_warn "Protoc version mismatch or missing."
+    check_command "golangci-lint" "--version" "$GOLANGCI_LINT_VERSION" && log_success "golangci-lint $GOLANGCI_LINT_VERSION" || log_warn "golangci-lint missing."
+
+    # 4. Binary Checks
+    log_info "--- Binaries ---"
+    [ -f "$PICOBOXD_BIN" ] && log_success "Agent binary: Found" || log_warn "Agent binary: Missing"
+    [ -f "$PICOBOX_MASTER_BIN" ] && log_success "Master binary: Found" || log_warn "Master binary: Missing"
 
     if [ $ERRORS -eq 0 ]; then
         log_success "Doctor found no critical issues."
@@ -317,8 +356,16 @@ do_doctor() {
 do_logs() {
     local SERVICE=${1:-"all"}
     local LINES=${2:-"50"}
+
+    if [ "$SERVICE" = "clear" ]; then
+        log_info "Clearing all logs in $LOG_DIR..."
+        rm -f "$LOG_DIR"/*.log
+        log_success "Logs cleared."
+        return
+    fi
+
     log_info "Showing last $LINES logs for $SERVICE..."
-    
+
     local LOG_FILE=""
     case "$SERVICE" in
         master) LOG_FILE="$LOG_DIR/master.log" ;;

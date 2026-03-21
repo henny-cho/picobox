@@ -16,13 +16,13 @@ func ExtractTarball(src, target string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open tarball: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	gzr, err := gzip.NewReader(f)
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzr.Close()
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
 
@@ -56,10 +56,10 @@ func ExtractTarball(src, target string) error {
 				return fmt.Errorf("failed to create file %s: %w", targetPath, err)
 			}
 			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+				_ = f.Close()
 				return fmt.Errorf("failed to copy file content to %s: %w", targetPath, err)
 			}
-			f.Close()
+			_ = f.Close()
 		case tar.TypeLink, tar.TypeSymlink:
 			// Handle symlinks if necessary, for now we skip or log
 			fmt.Printf("[Image] Skipping symlink: %s\n", header.Name)

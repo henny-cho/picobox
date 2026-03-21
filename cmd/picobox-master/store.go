@@ -80,7 +80,7 @@ func (s *Store) LoadNodes() (map[string]*pb.NodeMetrics, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	nodes := make(map[string]*pb.NodeMetrics)
 	for rows.Next() {
@@ -98,7 +98,7 @@ func (s *Store) LoadContainers() (map[string]*ContainerInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	containers := make(map[string]*ContainerInfo)
 	for rows.Next() {

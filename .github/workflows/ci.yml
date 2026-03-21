@@ -28,6 +28,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-picobox
+      - name: Environment Diagnostics
+        run: ./scripts/task.sh doctor
       - name: Run Linter
         run: ./scripts/task.sh lint
 
@@ -71,4 +73,4 @@ jobs:
       - name: Ensure permissions
         run: chmod +x bin/*
       - name: Run E2E Tests
-        run: ./scripts/task.sh e2e
+        run: sudo -E ./scripts/task.sh e2e
