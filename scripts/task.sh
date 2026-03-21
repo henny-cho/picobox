@@ -227,6 +227,8 @@ do_e2e() {
     do_build # Ensure fresh binaries
     ./scripts/prepare-rootfs.sh > /dev/null
 
+    export PICOBOX_API_TOKEN="e2e-secret-token"
+
     $PICOBOX_MASTER_BIN > "$LOG_DIR/master_e2e.log" 2>&1 &
     local MASTER_PID=$!
     wait_for_port 127.0.0.1 50051
@@ -239,11 +241,26 @@ do_e2e() {
     log_info "Waiting for Agent to register..."
     sleep 10
 
+    # Test 0: Authentication Failure
+    log_info "Testing Authentication Failure..."
+    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/deploy \
+         -H "Authorization: Bearer wrong-token" \
+         -H "Content-Type: application/json" \
+         -d "{}")
+    if [ "$HTTP_STATUS" -eq 401 ]; then
+        log_success "Auth Test Passed (Got 401 as expected)"
+    else
+        log_error "Auth Test Failed! Expected 401, got $HTTP_STATUS"
+        exit 1
+    fi
+
     # Trigger deployment via curl with a command that generates logs
     ROOTFS_PATH="$PICOBOX_STORAGE_DIR/rootfs/busybox"
     curl -s -X POST http://localhost:3000/api/deploy \
+         -H "Authorization: Bearer $PICOBOX_API_TOKEN" \
          -H "Content-Type: application/json" \
          -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"sh -c \\\"echo 'hello from container'; sleep 2\\\"\"}"
+
 
     log_info "Verifying Runtime and Logs..."
     sleep 8
@@ -262,6 +279,7 @@ do_e2e() {
     # Test 2: Automatic Scheduler (no hostname)
     log_info "Testing Automatic Scheduler (no hostname)..."
     curl -s -X POST http://localhost:3000/api/deploy \
+         -H "Authorization: Bearer $PICOBOX_API_TOKEN" \
          -H "Content-Type: application/json" \
          -d "{\"container_id\": \"sched-test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"echo 'sched-ok'\"}"
 
@@ -291,6 +309,7 @@ do_run() {
     ./scripts/prepare-rootfs.sh > /dev/null
 
     # 2. Start Services
+    export PICOBOX_API_TOKEN="dev-secret-token"
     log_info "Launching Master Server (Port 50051, 3000)..."
     $PICOBOX_MASTER_BIN > "$LOG_DIR/master.log" 2>&1 &
     local MASTER_PID=$!

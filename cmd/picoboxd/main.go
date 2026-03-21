@@ -17,6 +17,7 @@ import (
 	"github.com/henny-cho/picobox/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 var (
@@ -83,7 +84,15 @@ func main() {
 	}()
 
 	client := pb.NewAgentServiceClient(conn)
-	stream, err := client.ControlChannel(context.Background())
+
+	token := os.Getenv("PICOBOX_API_TOKEN")
+	ctx := context.Background()
+	if token != "" {
+		md := metadata.Pairs("x-api-token", token)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+
+	stream, err := client.ControlChannel(ctx)
 	if err != nil {
 		log.Fatalf("Error opening stream: %v", err)
 	}

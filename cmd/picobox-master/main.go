@@ -5,13 +5,18 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	pb "github.com/henny-cho/picobox/internal/api/pb"
 	"google.golang.org/grpc"
-	"time"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // ContainerInfo holds metadata about a deployed container.
@@ -51,6 +56,20 @@ type PicoMasterServer struct {
 
 // ControlChannel receives messages from agents (like metrics or deployment responses) and can send commands.
 func (s *PicoMasterServer) ControlChannel(stream pb.AgentService_ControlChannelServer) error {
+	expectedToken := os.Getenv("PICOBOX_API_TOKEN")
+	if expectedToken != "" {
+		md, ok := metadata.FromIncomingContext(stream.Context())
+		if !ok {
+			fmt.Println("[Security] Agent connection rejected: missing metadata")
+			return status.Errorf(codes.Unauthenticated, "missing metadata")
+		}
+		tokens := md.Get("x-api-token")
+		if len(tokens) == 0 || tokens[0] != expectedToken {
+			fmt.Printf("[Security] Agent connection rejected: invalid token\n")
+			return status.Errorf(codes.Unauthenticated, "invalid token")
+		}
+	}
+
 	var hostname string
 
 	defer func() {
@@ -170,7 +189,23 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 	app := fiber.New()
 	app.Use(cors.New())
 
+	apiToken := os.Getenv("PICOBOX_API_TOKEN")
+
 	api := app.Group("/api")
+
+	if apiToken != "" {
+		api.Use(func(c *fiber.Ctx) error {
+			authHeader := c.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized: Missing or malformed token"})
+			}
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if token != apiToken {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized: Invalid token"})
+			}
+			return c.Next()
+		})
+	}
 
 	api.Get("/containers", func(c *fiber.Ctx) error {
 		stateMutex.RLock()
