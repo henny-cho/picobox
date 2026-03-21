@@ -17,7 +17,14 @@ message AgentMessage {
     DeployResponse deploy_response = 2;
     StopResponse stop_response = 3;
     ExecResponse exec_response = 4;
+    ContainerLog container_log = 5;
   }
+}
+
+message ContainerLog {
+  string container_id = 1;
+  string log_line = 2;
+  bool is_stderr = 3;
 }
 
 // MasterMessage is sent from the Master to the PicoBox Daemon.

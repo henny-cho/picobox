@@ -32,7 +32,7 @@ func initBufferConn() *PicoMasterServer {
 
 		master = &PicoMasterServer{
 			nodes:   make(map[string]*pb.NodeMetrics),
-			streams: make(map[string]pb.AgentService_ControlChannelServer),
+			streams: make(map[string]*StreamWrapper),
 		}
 
 		pb.RegisterAgentServiceServer(s, master)

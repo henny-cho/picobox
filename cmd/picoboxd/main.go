@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -17,7 +19,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var containerRegistry sync.Map // map[string]*exec.Cmd
+var (
+	containerRegistry sync.Map // map[string]*exec.Cmd
+	streamMu          sync.Mutex
+)
+
+// safeSend sends a message over the gRPC stream in a thread-safe manner.
+func safeSend(stream pb.AgentService_ControlChannelClient, msg *pb.AgentMessage) error {
+	streamMu.Lock()
+	defer streamMu.Unlock()
+	return stream.Send(msg)
+}
 
 func getRealMetrics() (float32, uint64, uint64) {
 	// 1. CPU Usage (/proc/stat)
@@ -115,7 +127,7 @@ func main() {
 			DiskIoWait:       0.0,
 		}
 
-		err := stream.Send(&pb.AgentMessage{
+		err := safeSend(stream, &pb.AgentMessage{
 			Payload: &pb.AgentMessage_Metrics{
 				Metrics: metrics,
 			},
@@ -166,6 +178,7 @@ func handleDeploy(stream pb.AgentService_ControlChannelClient, req *pb.Container
 
 	if success {
 		// 2. Mount OverlayFS (Requires root)
+		fmt.Printf("[PicoBox-Agent] Mounting OverlayFS: %s, %s, %s -> %s\n", lower, upper, work, merged)
 		if err := storeMgr.MountOverlayFS(lower, upper, work, merged); err != nil {
 			success = false
 			errMsg = "Overlay mount failed: " + err.Error()
@@ -177,25 +190,60 @@ func handleDeploy(stream pb.AgentService_ControlChannelClient, req *pb.Container
 		if command == "" {
 			command = "while true; do date; sleep 5; done"
 		}
+		fmt.Printf("[PicoBox-Agent] Spawning isolation process: %s\n", command)
 		cmd := isolation.NewContainerProcess(context.Background(), "/bin/sh", "-c", command)
 		containerRegistry.Store(containerId, cmd)
 
-		if errStart := cmd.Start(); errStart != nil {
+		// Create pipes for log capture
+		stdout, errPipe := cmd.StdoutPipe()
+		if errPipe != nil {
 			success = false
-			errMsg = "Process start failed: " + errStart.Error()
-			containerRegistry.Delete(containerId)
-		} else {
-			fmt.Printf("[PicoBox-Agent] Container %s started (PID: %d)\n", containerId, cmd.Process.Pid)
-			go func() {
-				_ = cmd.Wait()
+			errMsg = "Failed to create stdout pipe: " + errPipe.Error()
+		}
+		stderr, errPipe := cmd.StderrPipe()
+		if errPipe != nil && success {
+			success = false
+			errMsg = "Failed to create stderr pipe: " + errPipe.Error()
+		}
+
+		if success {
+			if errStart := cmd.Start(); errStart != nil {
+				success = false
+				errMsg = "Process start failed: " + errStart.Error()
 				containerRegistry.Delete(containerId)
-				fmt.Printf("[PicoBox-Agent] Container %s exited\n", containerId)
-			}()
+			} else {
+				fmt.Printf("[PicoBox-Agent] Container %s started (PID: %d)\n", containerId, cmd.Process.Pid)
+
+				// Helper to stream logs
+				streamLogs := func(r io.Reader, isStderr bool) {
+					scanner := bufio.NewScanner(r)
+					for scanner.Scan() {
+						_ = safeSend(stream, &pb.AgentMessage{
+							Payload: &pb.AgentMessage_ContainerLog{
+								ContainerLog: &pb.ContainerLog{
+									ContainerId: containerId,
+									LogLine:     scanner.Text(),
+									IsStderr:    isStderr,
+								},
+							},
+						})
+					}
+				}
+
+				go streamLogs(stdout, false)
+				go streamLogs(stderr, true)
+
+				go func() {
+					_ = cmd.Wait()
+					containerRegistry.Delete(containerId)
+					fmt.Printf("[PicoBox-Agent] Container %s exited\n", containerId)
+				}()
+			}
 		}
 	}
 
 	// 3. Send response
-	_ = stream.Send(&pb.AgentMessage{
+	_ = safeSend(stream, &pb.AgentMessage{
 		Payload: &pb.AgentMessage_DeployResponse{
 			DeployResponse: &pb.DeployResponse{
 				ContainerId:  containerId,
@@ -233,7 +281,7 @@ func handleStop(stream pb.AgentService_ControlChannelClient, req *pb.StopRequest
 		errMsg = "container not found"
 	}
 
-	_ = stream.Send(&pb.AgentMessage{
+	_ = safeSend(stream, &pb.AgentMessage{
 		Payload: &pb.AgentMessage_StopResponse{
 			StopResponse: &pb.StopResponse{
 				ContainerId:  req.ContainerId,
@@ -281,7 +329,7 @@ func handleExec(stream pb.AgentService_ControlChannelClient, req *pb.ExecRequest
 		errMsg = "container not tracked in registry"
 	}
 
-	_ = stream.Send(&pb.AgentMessage{
+	_ = safeSend(stream, &pb.AgentMessage{
 		Payload: &pb.AgentMessage_ExecResponse{
 			ExecResponse: &pb.ExecResponse{
 				ContainerId:  containerId,

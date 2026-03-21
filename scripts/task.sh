@@ -239,19 +239,40 @@ do_e2e() {
     log_info "Waiting for Agent to register..."
     sleep 10
 
-    # Trigger deployment via curl
+    # Trigger deployment via curl with a command that generates logs
     ROOTFS_PATH="$PICOBOX_STORAGE_DIR/rootfs/busybox"
     curl -s -X POST http://localhost:3000/api/deploy \
          -H "Content-Type: application/json" \
-         -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"/bin/sh\"}"
+         -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"sh -c \\\"echo 'hello from container'; sleep 2\\\"\"}"
 
-    log_info "Verifying..."
-    sleep 5
-    if grep -q "Container .* started" "$LOG_DIR/agent_e2e.log"; then
-        log_success "E2E Test Passed!"
+    log_info "Verifying Runtime and Logs..."
+    sleep 8
+    if grep -q "Container .* started" "$LOG_DIR/agent_e2e.log" && \
+       grep -q "\[Master\] \[Log\] test: hello from container" "$LOG_DIR/master_e2e.log"; then
+        log_success "E2E Test & Log Streaming Passed!"
     else
-        log_error "E2E Test Failed! Agent log check:"
+        log_error "E2E Test Failed!"
+        log_info "--- Agent Log ---"
         cat "$LOG_DIR/agent_e2e.log"
+        log_info "--- Master Log ---"
+        cat "$LOG_DIR/master_e2e.log"
+        exit 1
+    fi
+
+    # Test 2: Automatic Scheduler (no hostname)
+    log_info "Testing Automatic Scheduler (no hostname)..."
+    curl -s -X POST http://localhost:3000/api/deploy \
+         -H "Content-Type: application/json" \
+         -d "{\"container_id\": \"sched-test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"echo 'sched-ok'\"}"
+
+    sleep 5
+    if grep -q "\[Scheduler\] Automatically selected node" "$LOG_DIR/master_e2e.log" && \
+       grep -q "Container sched-test started" "$LOG_DIR/agent_e2e.log"; then
+        log_success "Automatic Scheduler Test Passed!"
+    else
+        log_error "Automatic Scheduler Test Failed!"
+        log_info "--- Master Log ---"
+        cat "$LOG_DIR/master_e2e.log"
         exit 1
     fi
 }

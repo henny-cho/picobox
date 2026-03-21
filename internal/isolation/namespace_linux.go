@@ -12,11 +12,6 @@ import (
 func NewContainerProcess(ctx context.Context, command string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, command, args...)
 
-	// Basic I/O streams can be inherited or redirected later
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
 	// Configure namespace isolation flags via SysProcAttr
 	// Adding CLONE_NEWUSER allows non-root users to create other namespaces on modern Linux.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
