@@ -7,7 +7,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-ROOTFS_DIR="${1:-$ROOT_DIR/storage/rootfs/busybox}"
+# Use PICOBOX_STORAGE_DIR if set, otherwise default to .storage
+STORAGE_DIR="${PICOBOX_STORAGE_DIR:-$ROOT_DIR/.storage}"
+ROOTFS_DIR="${1:-$STORAGE_DIR/rootfs/busybox}"
 
 log_info "Preparing minimal filesystem in $ROOTFS_DIR..."
 

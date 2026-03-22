@@ -27,5 +27,6 @@ vendor/
 
 # Project specific artifacts
 web/.swc/
-storage/
+/storage/
+/.storage/
 *.db

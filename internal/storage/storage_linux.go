@@ -95,3 +95,9 @@ func PivotRoot(newRoot string) error {
 
 	return nil
 }
+
+// UnmountOverlayFS detaches the merged OverlayFS layer.
+func (s *StorageManager) UnmountOverlayFS(layerID string) error {
+	mergedDir := filepath.Join(s.baseDir, "overlay", layerID, "merged")
+	return syscall.Unmount(mergedDir, 0)
+}

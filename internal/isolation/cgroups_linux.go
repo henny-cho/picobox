@@ -83,3 +83,9 @@ func (c *CgroupsManager) SetCpuLimit(containerID string, quota int) error {
 
 	return nil
 }
+
+// RemoveCgroup deletes the cgroup directory for a specific container.
+func (c *CgroupsManager) RemoveCgroup(containerID string) error {
+	cgPath := filepath.Join(c.basePath, PicoBoxCgroupPrefix, containerID)
+	return os.RemoveAll(cgPath)
+}

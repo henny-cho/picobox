@@ -15,7 +15,7 @@ export default function DeployModal({ isOpen, onClose, nodes, onDeploy, editData
   const [formData, setFormData] = useState({
     hostname: nodes[0] || '',
     container_id: 'test-box',
-    rootfs_image_url: '/home/hyun/works/picobox/storage/rootfs/busybox',
+    rootfs_image_url: '/home/heny/works/picobox/.storage/rootfs/busybox',
     command: 'sh -c "while true; do date; sleep 5; done"',
     memory_max_bytes: 536870912,
     cpu_max_quota: 100000

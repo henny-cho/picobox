@@ -7,22 +7,22 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	pb "github.com/henny-cho/picobox/internal/api/pb"
 	"github.com/henny-cho/picobox/internal/isolation"
-	"github.com/henny-cho/picobox/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
 var (
-	containerRegistry sync.Map // map[string]*exec.Cmd
-	streamMu          sync.Mutex
+	sandboxRegistry sync.Map // map[string]*isolation.Sandbox
+	streamMu        sync.Mutex
 )
 
 // safeSend sends a message over the gRPC stream in a thread-safe manner.
@@ -32,52 +32,90 @@ func safeSend(stream pb.AgentService_ControlChannelClient, msg *pb.AgentMessage)
 	return stream.Send(msg)
 }
 
-func getRealMetrics() (float32, uint64, uint64) {
-	// 1. CPU Usage (/proc/stat)
-	data, err := os.ReadFile("/proc/stat")
-	var cpuUsage float32 = 0.0
+func getRealMetrics() *pb.NodeMetrics {
+	m, err := isolation.GetNodeMetrics()
+	if err != nil {
+		log.Printf("[PicoBox-Agent] Error getting node metrics: %v", err)
+		return &pb.NodeMetrics{
+			Hostname: "pico-agent-error",
+		}
+	}
+	return &pb.NodeMetrics{
+		Hostname:         m.Hostname,
+		CpuUsagePercent:  float32(m.CpuUsagePercent),
+		MemoryUsedBytes:  m.MemoryUsedBytes,
+		MemoryTotalBytes: m.MemoryTotalBytes,
+		DiskIoWait:       float32(m.DiskIoWait),
+	}
+}
+
+func cleanupOrphans() {
+	storageDir := os.Getenv("PICOBOX_STORAGE_DIR")
+	if storageDir == "" {
+		storageDir = "storage"
+	}
+	// 1. Unmount all picobox overlay mounts
+	fmt.Println("[PicoBox-Agent] Cleaning up orphan mounts...")
+	data, err := os.ReadFile("/proc/mounts")
 	if err == nil {
-		var user, nice, system, idle, iowait, irq, softirq, steal uint64
-		_, _ = fmt.Sscanf(string(data), "cpu  %d %d %d %d %d %d %d %d", &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal)
-		total := user + nice + system + idle + iowait + irq + softirq + steal
-		active := total - idle - iowait
-		if total > 0 {
-			cpuUsage = float32(active) * 100 / float32(total)
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "/"+storageDir+"/containers/") && strings.Contains(line, "merged") {
+				fields := strings.Fields(line)
+				if len(fields) > 1 {
+					mountPoint := fields[1]
+					fmt.Printf("[PicoBox-Agent] Unmounting orphan: %s\n", mountPoint)
+					_ = syscall.Unmount(mountPoint, 0)
+				}
+			}
 		}
 	}
 
-	// 2. Memory Usage (/proc/meminfo)
-	var memTotal, memAvailable uint64
-	memData, err := os.ReadFile("/proc/meminfo")
+	// 2. Cleanup cgroups (picobox sub-hierarchy)
+	fmt.Println("[PicoBox-Agent] Cleaning up orphan cgroups...")
+	cgroupPath := "/sys/fs/cgroup/picobox"
+	_ = filepath.Walk(cgroupPath, func(path string, info os.FileInfo, err error) error {
+		if err == nil && info.IsDir() && path != cgroupPath {
+			// Try to remove leaf cgroups first
+			_ = os.Remove(path)
+		}
+		return nil
+	})
+
+	// 3. Clear container storage state (optional, but keeps it clean)
+	// We might want to keep images but clear 'containers' working dirs
+	contDir := filepath.Join(storageDir, "containers")
+	entries, err := os.ReadDir(contDir)
 	if err == nil {
-		content := string(memData)
-		for _, line := range strings.Split(content, "\n") {
-			if strings.HasPrefix(line, "MemTotal:") {
-				_, _ = fmt.Sscanf(line, "MemTotal: %d kB", &memTotal)
-			}
-			if strings.HasPrefix(line, "MemAvailable:") {
-				_, _ = fmt.Sscanf(line, "MemAvailable: %d kB", &memAvailable)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				fmt.Printf("[PicoBox-Agent] Removing orphan container dir: %s\n", entry.Name())
+				_ = os.RemoveAll(filepath.Join(contDir, entry.Name()))
 			}
 		}
-		memTotal *= 1024
-		memAvailable *= 1024
 	}
-
-	memUsed := memTotal - memAvailable
-	if memTotal == 0 {
-		memTotal = 1024 * 1024 * 4096 // Default fallback
-	}
-
-	return cpuUsage, memUsed, memTotal
 }
 
 func main() {
 	fmt.Println("[PicoBox-Agent] Starting...")
 
+	// 0. Robustness: Cleanup Orphans
+	cleanupOrphans()
+
+	for {
+		err := runAgent()
+		if err != nil {
+			log.Printf("[PicoBox-Agent] Error: %v. Reconnecting in 5s...", err)
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
+
+func runAgent() error {
 	// Connect to Master Server
 	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		return fmt.Errorf("did not connect: %w", err)
 	}
 	defer func() {
 		_ = conn.Close()
@@ -86,7 +124,9 @@ func main() {
 	client := pb.NewAgentServiceClient(conn)
 
 	token := os.Getenv("PICOBOX_API_TOKEN")
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if token != "" {
 		md := metadata.Pairs("x-api-token", token)
 		ctx = metadata.NewOutgoingContext(ctx, md)
@@ -94,17 +134,20 @@ func main() {
 
 	stream, err := client.ControlChannel(ctx)
 	if err != nil {
-		log.Fatalf("Error opening stream: %v", err)
+		return fmt.Errorf("error opening stream: %w", err)
 	}
 
 	fmt.Println("[PicoBox-Agent] Connected to Master. Starting ControlChannel...")
 
 	// Receive Loop
+	stopChan := make(chan struct{})
 	go func() {
 		for {
 			msg, err := stream.Recv()
 			if err != nil {
-				log.Fatalf("Stream closed or error: %v", err)
+				log.Printf("[PicoBox-Agent] Stream recv error: %v", err)
+				close(stopChan)
+				return
 			}
 
 			if req := msg.GetDeployRequest(); req != nil {
@@ -126,132 +169,109 @@ func main() {
 		hostname = "pico-agent"
 	}
 
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		cpu, used, total := getRealMetrics()
-		metrics := &pb.NodeMetrics{
-			Hostname:         hostname,
-			CpuUsagePercent:  cpu,
-			MemoryUsedBytes:  used,
-			MemoryTotalBytes: total,
-			DiskIoWait:       0.0,
-		}
+		select {
+		case <-stopChan:
+			return fmt.Errorf("control channel closed")
+		case <-ticker.C:
+			metrics := getRealMetrics()
+			if metrics.Hostname == "pico-agent-error" || metrics.Hostname == "" {
+				metrics.Hostname = hostname
+			}
 
-		err := safeSend(stream, &pb.AgentMessage{
-			Payload: &pb.AgentMessage_Metrics{
-				Metrics: metrics,
-			},
-		})
-		if err != nil {
-			log.Printf("Failed to send metrics: %v", err)
-			break
+			err := safeSend(stream, &pb.AgentMessage{
+				Payload: &pb.AgentMessage_Metrics{
+					Metrics: metrics,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to send metrics: %w", err)
+			}
+			fmt.Printf("[PicoBox-Agent] Heartbeat sent. CPU %.1f%%\n", metrics.CpuUsagePercent)
 		}
-
-		fmt.Printf("[PicoBox-Agent] Heartbeat: CPU %.1f%%, Mem %d/%d MB\n", cpu, used/(1024*1024), total/(1024*1024))
-		time.Sleep(5 * time.Second)
 	}
 }
 
 func handleDeploy(stream pb.AgentService_ControlChannelClient, req *pb.ContainerSpec) {
 	containerId := req.ContainerId
-	rootfs := req.RootfsImageUrl
-	command := req.Command
+
+	storageDir := os.Getenv("PICOBOX_STORAGE_DIR")
+	if storageDir == "" {
+		storageDir = "storage"
+	}
+
+	// Prepare Sandbox Configuration
+	config := isolation.SandboxConfig{
+		ID:             containerId,
+		RootfsImageUrl: req.RootfsImageUrl,
+		Command:        req.Command,
+		MemoryMaxBytes: req.MemoryMaxBytes,
+		CpuMaxQuota:    int(req.CpuMaxQuota),
+		StorageDir:     storageDir,
+	}
+
+	sb := isolation.NewSandbox(config)
 
 	success := true
 	errMsg := ""
 
-	// 1. Storage setup
-	storageDir := os.Getenv("PICOBOX_STORAGE_DIR")
-	storeMgr := storage.NewStorageManager(storageDir)
-
-	lower, upper, work, merged, err := storeMgr.PrepareOverlayDirs(containerId)
-	if err != nil {
+	// 1. Initial Start (including storage/cgroups setup)
+	fmt.Printf("[PicoBox-Agent] Initiating Sandbox for %s...\n", containerId)
+	if err := sb.Start(context.Background()); err != nil {
 		success = false
-		errMsg = "Storage prep failed: " + err.Error()
-	}
+		errMsg = "Sandbox start failed: " + err.Error()
+		fmt.Printf("[PicoBox-Agent] Deploy failed: %s\n", errMsg)
 
-	if success && rootfs != "" {
-		if strings.HasSuffix(rootfs, ".tar.gz") {
-			fmt.Printf("[PicoBox-Agent] Extracting tarball: %s to %s\n", rootfs, lower)
-			if err := storage.ExtractTarball(rootfs, lower); err != nil {
-				success = false
-				errMsg = "Failed to extract tarball: " + err.Error()
-			}
-		} else {
-			fmt.Printf("[PicoBox-Agent] Copying rootfs dir: %s to %s\n", rootfs, lower)
-			if err := exec.Command("cp", "-a", rootfs+"/.", lower).Run(); err != nil {
-				success = false
-				errMsg = "Failed to copy rootfs: " + err.Error()
-			}
-		}
-	}
+		// 2. Rollback (Cleanup on failure)
+		_ = sb.Stop()
+	} else {
+		fmt.Printf("[PicoBox-Agent] Sandbox %s active.\n", containerId)
+		sandboxRegistry.Store(containerId, sb)
 
-	if success {
-		// 2. Mount OverlayFS (Requires root)
-		fmt.Printf("[PicoBox-Agent] Mounting OverlayFS: %s, %s, %s -> %s\n", lower, upper, work, merged)
-		if err := storeMgr.MountOverlayFS(lower, upper, work, merged); err != nil {
-			success = false
-			errMsg = "Overlay mount failed: " + err.Error()
-		}
-	}
-
-	if success {
-		// 3. Isolation process spawn
-		if command == "" {
-			command = "while true; do date; sleep 5; done"
-		}
-		fmt.Printf("[PicoBox-Agent] Spawning isolation process: %s\n", command)
-		cmd := isolation.NewContainerProcess(context.Background(), "/bin/sh", "-c", command)
-		containerRegistry.Store(containerId, cmd)
-
-		// Create pipes for log capture
-		stdout, errPipe := cmd.StdoutPipe()
+		// 3. Log Streaming
+		stdout, errPipe := sb.GetStdout()
 		if errPipe != nil {
-			success = false
-			errMsg = "Failed to create stdout pipe: " + errPipe.Error()
+			log.Printf("Warning: Failed to get stdout for %s: %v", containerId, errPipe)
 		}
-		stderr, errPipe := cmd.StderrPipe()
-		if errPipe != nil && success {
-			success = false
-			errMsg = "Failed to create stderr pipe: " + errPipe.Error()
+		stderr, errPipe := sb.GetStderr()
+		if errPipe != nil {
+			log.Printf("Warning: Failed to get stderr for %s: %v", containerId, errPipe)
 		}
 
-		if success {
-			if errStart := cmd.Start(); errStart != nil {
-				success = false
-				errMsg = "Process start failed: " + errStart.Error()
-				containerRegistry.Delete(containerId)
-			} else {
-				fmt.Printf("[PicoBox-Agent] Container %s started (PID: %d)\n", containerId, cmd.Process.Pid)
-
-				// Helper to stream logs
-				streamLogs := func(r io.Reader, isStderr bool) {
-					scanner := bufio.NewScanner(r)
-					for scanner.Scan() {
-						_ = safeSend(stream, &pb.AgentMessage{
-							Payload: &pb.AgentMessage_ContainerLog{
-								ContainerLog: &pb.ContainerLog{
-									ContainerId: containerId,
-									LogLine:     scanner.Text(),
-									IsStderr:    isStderr,
-								},
-							},
-						})
-					}
-				}
-
-				go streamLogs(stdout, false)
-				go streamLogs(stderr, true)
-
-				go func() {
-					_ = cmd.Wait()
-					containerRegistry.Delete(containerId)
-					fmt.Printf("[PicoBox-Agent] Container %s exited\n", containerId)
-				}()
+		streamLogs := func(r io.Reader, isStderr bool) {
+			if r == nil { return }
+			scanner := bufio.NewScanner(r)
+			for scanner.Scan() {
+				_ = safeSend(stream, &pb.AgentMessage{
+					Payload: &pb.AgentMessage_ContainerLog{
+						ContainerLog: &pb.ContainerLog{
+							ContainerId: containerId,
+							LogLine:     scanner.Text(),
+							IsStderr:    isStderr,
+						},
+					},
+				})
 			}
 		}
+
+		go streamLogs(stdout, false)
+		go streamLogs(stderr, true)
+
+		// Wait for exit
+		go func() {
+			err := sb.Wait()
+			sandboxRegistry.Delete(containerId)
+			fmt.Printf("[PicoBox-Agent] Sandbox %s exited. Info: %v\n", containerId, err)
+
+			// Optional: Auto-cleanup on exit
+			_ = sb.Stop()
+		}()
 	}
 
-	// 3. Send response
+	// 4. Send response to Master
 	_ = safeSend(stream, &pb.AgentMessage{
 		Payload: &pb.AgentMessage_DeployResponse{
 			DeployResponse: &pb.DeployResponse{
@@ -267,27 +287,18 @@ func handleStop(stream pb.AgentService_ControlChannelClient, req *pb.StopRequest
 	success := false
 	errMsg := ""
 
-	if val, ok := containerRegistry.Load(req.ContainerId); ok {
-		cmd := val.(*exec.Cmd)
-		if cmd.Process != nil {
-			fmt.Printf("[PicoBox-Agent] Terminating container %s\n", req.ContainerId)
-			var err error
-			if req.Force {
-				err = cmd.Process.Kill()
-			} else {
-				err = cmd.Process.Signal(os.Interrupt)
-			}
+	if val, ok := sandboxRegistry.Load(req.ContainerId); ok {
+		sb := val.(*isolation.Sandbox)
+		fmt.Printf("[PicoBox-Agent] Stopping sandbox %s (Force: %v)\n", req.ContainerId, req.Force)
 
-			if err == nil {
-				success = true
-			} else {
-				errMsg = err.Error()
-			}
+		// currently sb.Stop() handles unmounting and cgroup cleanup
+		if err := sb.Stop(); err == nil {
+			success = true
 		} else {
-			errMsg = "process not started"
+			errMsg = err.Error()
 		}
 	} else {
-		errMsg = "container not found"
+		errMsg = "sandbox not found in registry"
 	}
 
 	_ = safeSend(stream, &pb.AgentMessage{
@@ -309,33 +320,18 @@ func handleExec(stream pb.AgentService_ControlChannelClient, req *pb.ExecRequest
 	output := ""
 	errMsg := ""
 
-	if val, ok := containerRegistry.Load(containerId); ok {
-		cmd := val.(*exec.Cmd)
-		if cmd.Process != nil {
-			pid := cmd.Process.Pid
-			// Use nsenter to run command in the container's namespaces
-			// Note: This requires the agent to have sufficient privileges or be in the right namespace itself.
-			// Since we are using unprivileged user namespaces, we might need to handle this carefully.
-			// For now, we use sh -c as a fallback or nsenter if available.
-
-			// We try nsenter first
-			nsCmd := exec.Command("nsenter", "-t", fmt.Sprintf("%d", pid), "-m", "-u", "-i", "-n", "-p", "sh", "-c", command)
-			out, err := nsCmd.CombinedOutput()
-			if err == nil {
-				success = true
-				output = string(out)
-			} else {
-				// Fallback to simple exec if nsenter fails (might happen in some restricted environments)
-				errMsg = fmt.Sprintf("nsenter failed: %v. Output: %s", err, string(out))
-
-				// Optional: Just run it if it's a simple process-based "container"
-				// but for real isolation, nsenter is required.
-			}
+	if val, ok := sandboxRegistry.Load(containerId); ok {
+		sb := val.(*isolation.Sandbox)
+		// Run in sandbox namespaces
+		out, err := sb.Exec(command)
+		if err == nil {
+			success = true
+			output = out
 		} else {
-			errMsg = "container process not found"
+			errMsg = err.Error()
 		}
 	} else {
-		errMsg = "container not tracked in registry"
+		errMsg = "sandbox not tracked in registry"
 	}
 
 	_ = safeSend(stream, &pb.AgentMessage{

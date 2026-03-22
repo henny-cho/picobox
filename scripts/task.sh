@@ -32,7 +32,7 @@ source "$SCRIPT_DIR/versions.sh"
 export PATH="$ROOT_DIR/.tools/bin:$(go env GOPATH)/bin:$PATH"
 
 # Global Variables
-export PICOBOX_STORAGE_DIR="$ROOT_DIR/storage"
+export PICOBOX_STORAGE_DIR="$ROOT_DIR/.storage"
 export LOG_DIR="$ROOT_DIR/logs"
 
 mkdir -p "$LOG_DIR" "$PICOBOX_STORAGE_DIR"
@@ -263,7 +263,7 @@ do_e2e() {
 
     log_info "Verifying Runtime and Logs..."
     sleep 8
-    if grep -q "Container .* started" "$LOG_DIR/agent_e2e.log" && \
+    if grep -q "\[PicoBox-Agent\] Sandbox .* active" "$LOG_DIR/agent_e2e.log" && \
        grep -q "\[Master\] \[Log\] test: hello from container" "$LOG_DIR/master_e2e.log"; then
         log_success "E2E Test & Log Streaming Passed!"
     else
@@ -284,7 +284,7 @@ do_e2e() {
 
     sleep 5
     if grep -q "\[Scheduler\] Automatically selected node" "$LOG_DIR/master_e2e.log" && \
-       grep -q "Container sched-test started" "$LOG_DIR/agent_e2e.log"; then
+       grep -q "\[PicoBox-Agent\] Sandbox sched-test active" "$LOG_DIR/agent_e2e.log"; then
         log_success "Automatic Scheduler Test Passed!"
     else
         log_error "Automatic Scheduler Test Failed!"
@@ -486,7 +486,14 @@ do_release() {
 
 do_clean() {
     log_info "Cleaning..."
-    rm -rf bin/ logs/ storage/ web/.next web/node_modules
+    rm -rf bin/ logs/ web/.next web/node_modules
+
+    # Storage might contain root-owned files from agent runs
+    if [ -d "$PICOBOX_STORAGE_DIR" ]; then
+        log_warn "Removing storage directory (may require sudo)..."
+        SUDO="" && command -v sudo &> /dev/null && SUDO="sudo"
+        $SUDO rm -rf "$PICOBOX_STORAGE_DIR"
+    fi
     log_success "Cleaned."
 }
 

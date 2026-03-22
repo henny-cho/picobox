@@ -10,12 +10,11 @@ import (
 
 // NodeMetrics captures host-level resource usage.
 type NodeMetrics struct {
-	Hostname   string
-	MemTotal   uint64
-	MemFree    uint64
-	MemUsed    uint64
-	CpuUsage   float64 // Percentage (0.0 to 100.0)
-	DiskUsage  uint64
+	Hostname         string
+	MemoryTotalBytes uint64
+	MemoryUsedBytes  uint64
+	CpuUsagePercent  float64
+	DiskIoWait       float64
 }
 
 // GetNodeMetrics reads /proc/meminfo and /proc/stat to gather current system metrics.
@@ -28,15 +27,15 @@ func GetNodeMetrics() (*NodeMetrics, error) {
 	// 1. Memory Metrics
 	memInfo, err := readMemInfo()
 	if err == nil {
-		metrics.MemTotal = memInfo["MemTotal"]
-		metrics.MemFree = memInfo["MemAvailable"] // Use MemAvailable for better 'free' representation
-		metrics.MemUsed = metrics.MemTotal - metrics.MemFree
+		metrics.MemoryTotalBytes = memInfo["MemTotal"]
+		free := memInfo["MemAvailable"]
+		metrics.MemoryUsedBytes = metrics.MemoryTotalBytes - free
 	}
 
 	// 2. CPU Metrics (simplified calculation)
 	cpuUsage, err := calculateCpuUsage()
 	if err == nil {
-		metrics.CpuUsage = cpuUsage
+		metrics.CpuUsagePercent = cpuUsage
 	}
 
 	return metrics, nil

@@ -16,10 +16,10 @@
 - `internal/isolation/cgroups_linux.go`: Cgroups v2 기반 CPU, Memory 동적 자원 통제 및 쿼터 제한 구현 완료. (P-2 100%)
 - `internal/storage`: Pivot Root 및 OverlayFS 기반 파일시스템 격리 구현 완료.
 
-### [ ] Phase 3: 분산 통신 및 컨트롤 플레인 통합 (진행률: 85%)
-- `internal/network`, `cmd/picobox-master`: gRPC(`ControlChannel`) 기반 마스터-노드 양방향 스트리밍 구현 완료. (P-4 80%)
-- Fiber 프레임워크 기반 REST API 제어 계층 작성 중.
-- `web/`: Next.js 기반 클러스터 관제용 프론트엔드 대시보드 상태 동기화 및 연동 작업 중. (P-3 85%)
+### [x] Phase 3: 분산 통신 및 컨트롤 플레인 통합 (완료율: 100%)
+- `internal/network`, `cmd/picobox-master`: gRPC(`ControlChannel`) 기반 마스터-노드 양방향 스트리밍 구현 완료. (P-4 100%)
+- `cmd/picoboxd`: Phase 2 격리 엔진(Sandbox, Metrics) 통합 및 통합 빌드 검증 완료.
+- `web/`: Next.js 기반 클러스터 관제용 프론트엔드 대시보드 상태 동기화 및 연동 완료. (P-3 100%)
 
 ---
 
