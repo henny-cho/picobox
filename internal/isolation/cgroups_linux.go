@@ -66,3 +66,20 @@ func (c *CgroupsManager) SetMemoryLimit(containerID string, maxBytes uint64) err
 
 	return nil
 }
+
+// SetCpuLimit configures the CPU quota limit (cpu.max) for a cgroup.
+// The quota is specified in microseconds per period (standard period is 100000us).
+// Example: quota=20000 means 20% of 1 CPU core.
+func (c *CgroupsManager) SetCpuLimit(containerID string, quota int) error {
+	cpuMaxPath := filepath.Join(c.basePath, PicoBoxCgroupPrefix, containerID, "cpu.max")
+
+	// cgroups v2 cpu.max format is: "quota period"
+	// We use the default 100000us period.
+	limitStr := fmt.Sprintf("%d 100000", quota)
+
+	if err := os.WriteFile(cpuMaxPath, []byte(limitStr), 0644); err != nil {
+		return fmt.Errorf("failed to write cpu limit to %s: %w", cpuMaxPath, err)
+	}
+
+	return nil
+}

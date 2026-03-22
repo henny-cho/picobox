@@ -101,3 +101,40 @@ func TestCgroupProcAdd(t *testing.T) {
 		t.Errorf("Expected PID %s in procs, but read %s", expectedPIDStr, writtenPIDStr)
 	}
 }
+
+// TestCgroupCpuLimit validates that CPU quota can be written to cpu.max
+func TestCgroupCpuLimit(t *testing.T) {
+	mockCgroupBase := filepath.Join(t.TempDir(), "sys", "fs", "cgroup")
+	cgManager := isolation.NewCgroupsManager(mockCgroupBase)
+	testContainerID := "picobox-test-cpu-01"
+
+	// Create mock hierarchy
+	if err := cgManager.CreateCgroup(testContainerID); err != nil {
+		t.Fatalf("CreateCgroup failed: %v", err)
+	}
+	containerCgPath := filepath.Join(mockCgroupBase, "picobox", testContainerID)
+
+	// Pre-create cpu.max for the test to write to
+	cpuMaxPath := filepath.Join(containerCgPath, "cpu.max")
+	if err := os.WriteFile(cpuMaxPath, []byte("max 100000"), 0644); err != nil {
+		t.Fatalf("Failed to create mock cpu.max file: %v", err)
+	}
+
+	testQuota := 50000 // 50% CPU
+	err := cgManager.SetCpuLimit(testContainerID, testQuota)
+	if err != nil {
+		t.Fatalf("SetCpuLimit failed: %v", err)
+	}
+
+	readCpu, err := os.ReadFile(cpuMaxPath)
+	if err != nil {
+		t.Fatalf("Failed to read back cpu.max file: %v", err)
+	}
+
+	writtenCpuStr := string(readCpu)
+	expectedCpuStr := "50000 100000"
+
+	if writtenCpuStr != expectedCpuStr && writtenCpuStr != expectedCpuStr+"\n" {
+		t.Errorf("Expected CPU limit %s, but read %s", expectedCpuStr, writtenCpuStr)
+	}
+}
