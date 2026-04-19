@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +19,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+)
+
+// Injected at build time via -ldflags "-X main.Version=... -X main.Commit=... -X main.BuildDate=..."
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildDate = "unknown"
 )
 
 var (
@@ -97,7 +105,14 @@ func cleanupOrphans() {
 }
 
 func main() {
-	fmt.Println("[PicoBox-Agent] Starting...")
+	showVersion := flag.Bool("version", false, "Print version information and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Printf("picoboxd %s (commit %s, built %s)\n", Version, Commit, BuildDate)
+		return
+	}
+
+	fmt.Printf("[PicoBox-Agent] Starting (version=%s, commit=%s)...\n", Version, Commit)
 
 	// 0. Robustness: Cleanup Orphans
 	cleanupOrphans()

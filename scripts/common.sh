@@ -65,6 +65,23 @@ ensure_go() {
     fi
 }
 
+# ensure_go_tool <binary> <pkg@version> <version_substring>
+# Installs the Go tool only when missing or when the version substring
+# does not appear in `<binary> --version` output.
+ensure_go_tool() {
+    local bin_name=$1
+    local pkg_spec=$2
+    local version_substr=$3
+    local bin_path
+    bin_path=$(command -v "$bin_name" 2>/dev/null || true)
+    if [ -n "$bin_path" ] && [ -n "$version_substr" ] && "$bin_name" --version 2>&1 | grep -q "$version_substr"; then
+        log_info "$bin_name already at $version_substr."
+        return 0
+    fi
+    log_info "Installing $pkg_spec..."
+    go install "$pkg_spec"
+}
+
 wait_for_port() {
     local host=$1
     local port=$2
@@ -80,6 +97,64 @@ wait_for_port() {
     if [ $count -eq $timeout ]; then
         log_error "Timeout waiting for $host:$port"
     fi
+}
+
+# wait_for_log <file> <regex> <timeout_seconds> [label]
+# Polls the log file for a regex match, sleeping 0.5s each tick.
+# Returns 0 on match, non-zero on timeout.
+wait_for_log() {
+    local file=$1
+    local pattern=$2
+    local timeout=${3:-30}
+    local label=${4:-"pattern"}
+    local elapsed=0
+    local interval_ms=500
+
+    log_info "Waiting for $label in $(basename "$file") (timeout ${timeout}s)..."
+    while [ "$elapsed" -lt "$((timeout * 1000))" ]; do
+        if [ -f "$file" ] && grep -qE "$pattern" "$file" 2>/dev/null; then
+            log_success "Matched $label after ${elapsed}ms."
+            return 0
+        fi
+        sleep 0.5
+        elapsed=$((elapsed + interval_ms))
+    done
+    log_warn "Timeout waiting for $label after ${timeout}s. Last 20 lines:"
+    [ -f "$file" ] && tail -n 20 "$file" || echo "(log file missing)"
+    return 1
+}
+
+# port_in_use <port> → exits 0 if bound.
+port_in_use() {
+    local port=$1
+    ss -ltnH "sport = :$port" 2>/dev/null | grep -q LISTEN
+}
+
+# save_pid <name> <pid>
+save_pid() {
+    local name=$1
+    local pid=$2
+    mkdir -p "${LOG_DIR:-/tmp}"
+    echo "$pid" > "${LOG_DIR:-/tmp}/${name}.pid"
+}
+
+# stop_pid_file <name>: kill the process tracked by <name>.pid, then remove the pidfile.
+stop_pid_file() {
+    local name=$1
+    local pidfile="${LOG_DIR:-/tmp}/${name}.pid"
+    [ -f "$pidfile" ] || return 0
+    local pid
+    pid=$(cat "$pidfile" 2>/dev/null || echo "")
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        log_info "Stopping $name (pid=$pid)..."
+        kill -TERM "$pid" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+        done
+        kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pidfile"
 }
 
 format_code() {
@@ -131,6 +206,12 @@ stop_process() {
         fi
     fi
 }
+
+# Load local overrides if present (scripts/env.sh is gitignored).
+if [ -f "$SCRIPT_DIR/env.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/env.sh"
+fi
 
 # Ensure we are in the project root by default
 cd "$ROOT_DIR"

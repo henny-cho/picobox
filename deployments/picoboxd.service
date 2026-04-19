@@ -1,11 +1,12 @@
 [Unit]
 Description=PicoBox Agent Daemon
 Documentation=https://github.com/henny-cho/picobox
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-# Must be running as root to manipulate linux namespaces and cgroups
+# Agent manipulates Linux namespaces, cgroups, and mount points; must be root.
 User=root
 Group=root
 ExecStart=/usr/local/bin/picoboxd
@@ -13,8 +14,27 @@ Restart=always
 RestartSec=3
 LimitNOFILE=1048576
 
-# Secure environment handling (optional)
-# EnvironmentFile=-/etc/default/picoboxd
+# State & logging
+StateDirectory=picobox
+LogsDirectory=picobox
+WorkingDirectory=/var/lib/picobox
+Environment=PICOBOX_STORAGE_DIR=/var/lib/picobox
+
+# EnvironmentFile may carry API tokens; leading '-' keeps it optional.
+EnvironmentFile=-/etc/default/picoboxd
+
+# Hardening — kept compatible with namespace/mount work the agent performs.
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+PrivateTmp=false
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectControlGroups=false
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=false
 
 [Install]
 WantedBy=multi-user.target

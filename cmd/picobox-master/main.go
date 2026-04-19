@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +19,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+)
+
+// Injected at build time via -ldflags "-X main.Version=... -X main.Commit=... -X main.BuildDate=..."
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildDate = "unknown"
 )
 
 // ContainerInfo holds metadata about a deployed container.
@@ -550,6 +558,15 @@ func startGRPC(port string) *PicoMasterServer {
 }
 
 func main() {
+	showVersion := flag.Bool("version", false, "Print version information and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Printf("picobox-master %s (commit %s, built %s)\n", Version, Commit, BuildDate)
+		return
+	}
+
+	log.Printf("[PicoBox-Master] Starting (version=%s, commit=%s)", Version, Commit)
+
 	var err error
 	storageDir := "storage"
 	globalStore, err = NewStore(storageDir + "/picobox.db")

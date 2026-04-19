@@ -21,7 +21,8 @@
 #   ./scripts/task.sh run           # Start development stack
 # -----------------------------------------------------------------------------
 
-set -e
+set -euo pipefail
+IFS=$'\n\t'
 
 # 0. Load Environment & Utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,8 +55,11 @@ print_usage() {
     echo -e "  ${CYAN}logs [service]${NC}  Show logs for all or specific service (master, agent, web)."
     echo -e "                    Use 'clear' to remove all log files."
     echo -e "  ${CYAN}release${NC}         Build production-ready binaries and web bundle."
-    echo -e "  ${CYAN}clean${NC}           Remove build artifacts, logs, and temporary storage."
+    echo -e "  ${CYAN}clean${NC}           Remove build artifacts and logs (bin/, web/.next, logs/)."
+    echo -e "  ${CYAN}clean:data${NC}      Remove runtime storage (.storage/). Destructive, requires sudo."
     echo -e "  ${CYAN}tidy${NC}            Run 'go mod tidy' for dependency management."
+    echo -e "  ${CYAN}fmt${NC}             Apply gofmt and trim trailing whitespace (in-place)."
+    echo -e "  ${CYAN}fmt:check${NC}       Verify formatting without modifying files (CI mode)."
     echo -e "  ${CYAN}lint${NC}            Run 'golangci-lint' to ensure code quality.\n"
     echo -e "${BOLD_WHITE}EXAMPLES:${NC}"
     echo -e "  ./scripts/task.sh setup           # Fresh setup"
@@ -138,10 +142,23 @@ do_setup() {
     fi
 
     log_info "Step 3: Go Plugins & Linters..."
-    go install google.golang.org/protobuf/cmd/protoc-gen-go@$PROTOC_GEN_GO_VERSION
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$PROTOC_GEN_GO_GRPC_VERSION
-    if ! command -v golangci-lint &> /dev/null; then
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$TOOL_BIN" "${GOLANGCI_LINT_VERSION}"
+    ensure_go_tool "protoc-gen-go" \
+        "google.golang.org/protobuf/cmd/protoc-gen-go@$PROTOC_GEN_GO_VERSION" \
+        "${PROTOC_GEN_GO_VERSION#v}"
+    ensure_go_tool "protoc-gen-go-grpc" \
+        "google.golang.org/grpc/cmd/protoc-gen-go-grpc@$PROTOC_GEN_GO_GRPC_VERSION" \
+        "${PROTOC_GEN_GO_GRPC_VERSION#v}"
+
+    local current_lint=""
+    if command -v golangci-lint &> /dev/null; then
+        current_lint=$(golangci-lint --version 2>&1 | head -n1 || true)
+    fi
+    if ! echo "$current_lint" | grep -q "${GOLANGCI_LINT_VERSION#v}"; then
+        log_info "Installing golangci-lint ${GOLANGCI_LINT_VERSION}..."
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$TOOL_BIN" "${GOLANGCI_LINT_VERSION}"
+    else
+        log_info "golangci-lint already at ${GOLANGCI_LINT_VERSION}."
     fi
 
     log_success "Setup completed."
@@ -164,26 +181,48 @@ do_lint() {
     log_success "Linting completed."
 }
 
-do_build() {
-    log_info "Building PicoBox Components..."
-    do_tidy
+do_fmt() {
+    log_info "Formatting Go sources (gofmt -w)..."
+    gofmt -w $(find . -type f -name '*.go' \
+        -not -path './web/*' \
+        -not -path './internal/api/pb/*')
     format_code
+    log_success "Formatting applied."
+}
 
-    # 1. Proto
+do_fmt_check() {
+    log_info "Checking Go formatting (gofmt -l)..."
+    local diff
+    diff=$(gofmt -l $(find . -type f -name '*.go' \
+        -not -path './web/*' \
+        -not -path './internal/api/pb/*'))
+    if [ -n "$diff" ]; then
+        log_warn "The following files are not gofmt-clean:"
+        echo "$diff"
+        log_error "Run './scripts/task.sh fmt' to fix."
+    fi
+    log_success "Formatting clean."
+}
+
+do_proto() {
     log_info "Generating Proto code..."
     mkdir -p internal/api/pb
     protoc --go_out=internal/api/pb --go_opt=paths=source_relative \
            --go-grpc_out=internal/api/pb --go-grpc_opt=paths=source_relative \
            -I api/proto api/proto/picobox.proto
     log_success "Proto code generated."
+}
 
-    # 2. Go Binaries
+do_build() {
+    log_info "Building PicoBox Components..."
+
+    do_proto
+
     mkdir -p "$BIN_DIR"
     go build -o "$PICOBOXD_BIN" ./cmd/picoboxd
     go build -o "$PICOBOX_MASTER_BIN" ./cmd/picobox-master
     log_success "Go binaries built."
 
-    # 3. Web (Optional check)
     if [ -d "web" ] && [ -f "web/package.json" ]; then
         log_info "Building Web Dashboard..."
         (cd web && npm ci && npm run build)
@@ -222,112 +261,125 @@ do_test() {
 }
 
 do_e2e() {
+    local SKIP_BUILD=false
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --skip-build) SKIP_BUILD=true ;;
+        esac
+    done
+
     log_info "Starting E2E Runtime Tests..."
     do_stop
-    do_build # Ensure fresh binaries
+
+    if [ "$SKIP_BUILD" = false ]; then
+        do_build
+    else
+        log_info "Skipping build (--skip-build). Verifying artifacts..."
+        [ -x "$PICOBOXD_BIN" ] || log_error "Agent binary missing at $PICOBOXD_BIN"
+        [ -x "$PICOBOX_MASTER_BIN" ] || log_error "Master binary missing at $PICOBOX_MASTER_BIN"
+    fi
     ./scripts/prepare-rootfs.sh > /dev/null
 
-    export PICOBOX_API_TOKEN="e2e-secret-token"
+    export PICOBOX_API_TOKEN="${PICOBOX_API_TOKEN:-e2e-secret-token}"
 
-    $PICOBOX_MASTER_BIN > "$LOG_DIR/master_e2e.log" 2>&1 &
+    "$PICOBOX_MASTER_BIN" > "$LOG_DIR/master_e2e.log" 2>&1 &
     local MASTER_PID=$!
+    save_pid master_e2e "$MASTER_PID"
     wait_for_port 127.0.0.1 50051
     wait_for_port 127.0.0.1 3000
 
-    $PICOBOXD_BIN > "$LOG_DIR/agent_e2e.log" 2>&1 &
+    "$PICOBOXD_BIN" > "$LOG_DIR/agent_e2e.log" 2>&1 &
     local AGENT_PID=$!
+    save_pid agent_e2e "$AGENT_PID"
 
-    trap "stop_process $MASTER_PID; stop_process $AGENT_PID; [ -f \"$LOG_DIR/agent_e2e.log\" ] && cat \"$LOG_DIR/agent_e2e.log\"" EXIT
-    log_info "Waiting for Agent to register..."
-    sleep 10
+    cleanup_e2e() {
+        local code=${1:-0}
+        stop_pid_file master_e2e
+        stop_pid_file agent_e2e
+        if [ "$code" -ne 0 ]; then
+            log_info "--- Agent Log (tail) ---"; tail -n 60 "$LOG_DIR/agent_e2e.log" 2>/dev/null || true
+            log_info "--- Master Log (tail) ---"; tail -n 60 "$LOG_DIR/master_e2e.log" 2>/dev/null || true
+        fi
+    }
+    trap 'cleanup_e2e $?' EXIT
+
+    # Wait for agent → master registration via log signal (no hard sleep).
+    wait_for_log "$LOG_DIR/master_e2e.log" "\[Master\] Received metrics from" 30 "agent registration" \
+        || log_error "Agent did not register in time."
 
     # Test 0: Authentication Failure
     log_info "Testing Authentication Failure..."
+    local HTTP_STATUS
     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/deploy \
          -H "Authorization: Bearer wrong-token" \
          -H "Content-Type: application/json" \
          -d "{}")
-    if [ "$HTTP_STATUS" -eq 401 ]; then
+    if [ "$HTTP_STATUS" = "401" ]; then
         log_success "Auth Test Passed (Got 401 as expected)"
     else
         log_error "Auth Test Failed! Expected 401, got $HTTP_STATUS"
-        exit 1
     fi
 
-    # Trigger deployment via curl with a command that generates logs
-    ROOTFS_PATH="$PICOBOX_STORAGE_DIR/rootfs/busybox"
+    # Test 1: Deploy + log streaming
+    local ROOTFS_PATH="$PICOBOX_STORAGE_DIR/rootfs/busybox"
     curl -s -X POST http://localhost:3000/api/deploy \
          -H "Authorization: Bearer $PICOBOX_API_TOKEN" \
          -H "Content-Type: application/json" \
-         -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"sh -c \\\"while true; do echo 'hello from container'; sleep 2; done\\\"\"}"
+         -d "{\"hostname\": \"$(hostname)\", \"container_id\": \"test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"sh -c \\\"while true; do echo 'hello from container'; sleep 2; done\\\"\"}" \
+         > /dev/null
 
-    log_info "Verifying Runtime and Logs..."
-    sleep 8
-    if grep -q "\[PicoBox-Agent\] Sandbox .* active" "$LOG_DIR/agent_e2e.log" && \
-       grep -q "\[Master\] \[Log\] test: hello from container" "$LOG_DIR/master_e2e.log"; then
-        log_success "E2E Test & Log Streaming Passed!"
-    else
-        log_error "E2E Test Failed!"
-        log_info "--- Agent Log ---"
-        cat "$LOG_DIR/agent_e2e.log"
-        log_info "--- Master Log ---"
-        cat "$LOG_DIR/master_e2e.log"
-        exit 1
-    fi
+    wait_for_log "$LOG_DIR/agent_e2e.log" "\[PicoBox-Agent\] Sandbox test active" 20 "sandbox active" \
+        || log_error "Sandbox did not become active."
+    wait_for_log "$LOG_DIR/master_e2e.log" "\[Master\] \[Log\] test: hello from container" 20 "log streaming" \
+        || log_error "Log streaming did not reach master."
+    log_success "E2E Test & Log Streaming Passed!"
 
     # Test 2: Automatic Scheduler (no hostname)
     log_info "Testing Automatic Scheduler (no hostname)..."
     curl -s -X POST http://localhost:3000/api/deploy \
          -H "Authorization: Bearer $PICOBOX_API_TOKEN" \
          -H "Content-Type: application/json" \
-         -d "{\"container_id\": \"sched-test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"echo 'sched-ok'\"}"
+         -d "{\"container_id\": \"sched-test\", \"rootfs_image_url\": \"$ROOTFS_PATH\", \"command\": \"echo 'sched-ok'\"}" \
+         > /dev/null
 
-    sleep 5
-    if grep -q "\[Scheduler\] Automatically selected node" "$LOG_DIR/master_e2e.log" && \
-       grep -q "\[PicoBox-Agent\] Sandbox sched-test active" "$LOG_DIR/agent_e2e.log"; then
-        log_success "Automatic Scheduler Test Passed!"
-    else
-        log_error "Automatic Scheduler Test Failed!"
-        log_info "--- Master Log ---"
-        cat "$LOG_DIR/master_e2e.log"
-        exit 1
-    fi
+    wait_for_log "$LOG_DIR/master_e2e.log" "\[Scheduler\] Automatically selected node" 15 "scheduler decision" \
+        || log_error "Scheduler did not auto-select."
+    wait_for_log "$LOG_DIR/agent_e2e.log" "\[PicoBox-Agent\] Sandbox sched-test active" 15 "sched-test sandbox" \
+        || log_error "Sandbox sched-test did not activate."
+    log_success "Automatic Scheduler Test Passed!"
 
     # Test 3: Web Terminal (WebSocket)
     log_info "Testing Web Terminal (WebSocket)..."
-    python3 -u -c "
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_warn "python3 not available; skipping WebSocket test."
+    elif ! python3 -c "import websockets" 2>/dev/null; then
+        log_warn "python3-websockets not installed; skipping WebSocket test."
+        log_warn "Install via: pip install --user websockets"
+    else
+        python3 -u - "$PICOBOX_API_TOKEN" <<'PY' > "$LOG_DIR/ws_test.log" 2>&1 || true
 import asyncio, websockets, sys
+token = sys.argv[1]
 async def test_ws():
-    try:
-        uri = f'ws://localhost:3000/ws/terminal?container_id=test&token=$PICOBOX_API_TOKEN'
-        async with websockets.connect(uri) as ws:
-            conn_msg = await ws.recv() # Connection message
-            print(f'Conn msg: {conn_msg.strip()}')
-            await ws.send('echo WS_TEST_OK')
-            response = await asyncio.wait_for(ws.recv(), timeout=5.0)
-            print(f'Response: {response.strip()}')
-            if 'WS_TEST_OK' in response:
-                print('PASS')
-                return
-            print(f'FAIL: Unexpected response: {response}')
-            sys.exit(1)
-    except Exception as e:
-        print(f'FAIL: {e}')
+    uri = f'ws://localhost:3000/ws/terminal?container_id=test&token={token}'
+    async with websockets.connect(uri) as ws:
+        conn_msg = await ws.recv()
+        print(f'Conn msg: {conn_msg.strip()}')
+        await ws.send('echo WS_TEST_OK')
+        response = await asyncio.wait_for(ws.recv(), timeout=5.0)
+        print(f'Response: {response.strip()}')
+        if 'WS_TEST_OK' in response:
+            print('PASS')
+            return
+        print(f'FAIL: Unexpected response: {response}')
         sys.exit(1)
 asyncio.run(test_ws())
-" > "$LOG_DIR/ws_test.log" 2>&1 || true
-
-
-    if grep -q "PASS" "$LOG_DIR/ws_test.log"; then
-        log_success "Web Terminal WebSocket Test Passed!"
-    else
-        # We might need to install websockets if missing. Fallback if python lib fails.
-        if grep -q "No module named" "$LOG_DIR/ws_test.log"; then
-            log_warn "Skipping Web Terminal test (websockets module missing)"
+PY
+        if grep -q "PASS" "$LOG_DIR/ws_test.log"; then
+            log_success "Web Terminal WebSocket Test Passed!"
         else
-            log_error "Web Terminal WebSocket Test Failed!"
             cat "$LOG_DIR/ws_test.log"
-            exit 1
+            log_error "Web Terminal WebSocket Test Failed!"
         fi
     fi
 }
@@ -337,61 +389,67 @@ do_run() {
     log_info "Starting Full-Stack PicoBox Environment..."
     do_stop
 
-    # 1. Pre-flight checks
-    if ss -tuln | grep -qE ":50051|:3000|:3001"; then
-        log_error "Port 50051 (gRPC), 3000 (Master REST), or 3001 (Web Dashboard) is already in use."
-        exit 1
-    fi
+    # 1. Pre-flight port checks
+    local p
+    for p in 50051 3000 3001; do
+        if port_in_use "$p"; then
+            log_error "Port $p already in use. Free it before running."
+        fi
+    done
 
     do_check_deps run
     ./scripts/prepare-rootfs.sh > /dev/null
 
     # 2. Start Services
-    export PICOBOX_API_TOKEN="dev-secret-token"
+    export PICOBOX_API_TOKEN="${PICOBOX_API_TOKEN:-dev-secret-token}"
     log_info "Launching Master Server (Port 50051, 3000)..."
-    $PICOBOX_MASTER_BIN > "$LOG_DIR/master.log" 2>&1 &
+    "$PICOBOX_MASTER_BIN" > "$LOG_DIR/master.log" 2>&1 &
     local MASTER_PID=$!
+    save_pid master "$MASTER_PID"
     wait_for_port 127.0.0.1 50051
     wait_for_port 127.0.0.1 3000
 
     log_info "Launching PicoBox Agent..."
-    $PICOBOXD_BIN > "$LOG_DIR/agent.log" 2>&1 &
+    "$PICOBOXD_BIN" > "$LOG_DIR/agent.log" 2>&1 &
     local AGENT_PID=$!
+    save_pid agent "$AGENT_PID"
 
     log_info "Launching Web Dashboard (Port 3001)..."
-    (cd web && npm run dev) > "$LOG_DIR/web.log" 2>&1 &
+    (cd web && exec npm run dev) > "$LOG_DIR/web.log" 2>&1 &
     local WEB_PID=$!
-    wait_for_port 127.0.0.1 3001 30 # Next.js on 3001
+    save_pid web "$WEB_PID"
+    wait_for_port 127.0.0.1 3001 30
 
     log_success "All services are up and running!"
     echo -e "${BOLD_WHITE}Dashboard:${NC} ${BLUE}http://localhost:3001${NC}"
     echo -e "${BOLD_WHITE}API:${NC}       ${BLUE}http://localhost:3000${NC}"
     echo -e "${BOLD_WHITE}Logs:${NC}      ${CYAN}tail -f $LOG_DIR/*.log${NC}"
 
-    # 3. Automatic Browser Open (Optional)
     if command -v xdg-open &> /dev/null; then
-        xdg-open "http://localhost:3000" &> /dev/null &
+        xdg-open "http://localhost:3001" &> /dev/null &
     fi
 
-    # 4. Process Monitoring & Signal Handling
-    trap "log_info 'Shutting down...'; kill $MASTER_PID $AGENT_PID $WEB_PID 2>/dev/null; do_stop; exit 0" SIGINT SIGTERM EXIT
+    # 3. Signal handling
+    trap "log_info 'Shutting down...'; do_stop; exit 0" SIGINT SIGTERM
 
     log_info "Monitoring processes (Press Ctrl+C to stop)..."
     while true; do
-        if ! kill -0 $MASTER_PID 2>/dev/null; then log_error "Master server died unexpectedly!"; fi
-        if ! kill -0 $AGENT_PID 2>/dev/null; then log_error "Agent died unexpectedly!"; fi
-        # WEB_PID might be the intermediate npm process, so we check carefully or just ignore if it's less critical
+        kill -0 "$MASTER_PID" 2>/dev/null || { log_warn "Master server died."; break; }
+        kill -0 "$AGENT_PID"  2>/dev/null || { log_warn "Agent died.";         break; }
         sleep 5
     done
+    do_stop
 }
 
 do_stop() {
     log_info "Stopping processes..."
-    stop_process "picobox-master"
-    stop_process "picoboxd"
-    # Stop Next.js and its children
-    pkill -f "next-dev" || true
-    pkill -f "next-server" || true
+    stop_pid_file web
+    stop_pid_file agent
+    stop_pid_file master
+    stop_pid_file master_e2e
+    stop_pid_file agent_e2e
+    # Fallback: any residual Next.js dev servers spawned under different PIDs.
+    pkill -f "next-server" 2>/dev/null || true
     log_success "All stopped."
 }
 
@@ -431,6 +489,33 @@ do_doctor() {
     [ -f "$PICOBOXD_BIN" ] && log_success "Agent binary: Found" || log_warn "Agent binary: Missing"
     [ -f "$PICOBOX_MASTER_BIN" ] && log_success "Master binary: Found" || log_warn "Master binary: Missing"
 
+    # 5. Runtime dependencies
+    log_info "--- Runtime Dependencies ---"
+    command -v busybox   &> /dev/null && log_success "busybox present" || log_warn "busybox missing (required by prepare-rootfs.sh)"
+    command -v ss        &> /dev/null && log_success "ss present"      || log_warn "ss missing (iproute2; used for port checks)"
+    command -v curl      &> /dev/null && log_success "curl present"    || log_warn "curl missing (required by E2E HTTP tests)"
+    command -v sudo      &> /dev/null && log_success "sudo present"    || log_warn "sudo missing (agent needs root for mount/namespaces)"
+
+    if command -v python3 &> /dev/null; then
+        log_success "python3 present"
+        if python3 -c "import websockets" 2>/dev/null; then
+            log_success "python3 websockets module present"
+        else
+            log_warn "python3 websockets module missing (WS E2E will be skipped). Install: pip install --user websockets"
+        fi
+    else
+        log_warn "python3 missing (WS E2E will be skipped)"
+    fi
+
+    # 6. Cgroup delegation (agent operates under /sys/fs/cgroup/picobox)
+    if [ -f "/sys/fs/cgroup/cgroup.subtree_control" ]; then
+        if grep -qE "(^| )(cpu|memory|pids)( |$)" /sys/fs/cgroup/cgroup.subtree_control; then
+            log_success "Cgroup v2 controllers delegated (cpu/memory/pids available at root)."
+        else
+            log_warn "Cgroup v2 controllers not delegated at root. Agent may fail to create cgroups."
+        fi
+    fi
+
     if [ $ERRORS -eq 0 ]; then
         log_success "Doctor found no critical issues."
     else
@@ -469,49 +554,75 @@ do_logs() {
 
 do_release() {
     log_info "Building Production Release..."
-    do_clean
-    # 1. Build optimized Go binaries
+    # Only remove prior build outputs — never touch runtime data in release.
+    rm -rf "$BIN_DIR"
     mkdir -p "$BIN_DIR"
-    export CGO_ENABLED=0
-    go build -ldflags="-s -w" -o "$PICOBOXD_BIN" ./cmd/picoboxd
-    go build -ldflags="-s -w" -o "$PICOBOX_MASTER_BIN" ./cmd/picobox-master
-    log_success "Stripped Go binaries built."
 
-    # 2. Build production Web
+    do_proto
+
+    local VERSION COMMIT DATE LDFLAGS
+    VERSION="${PICOBOX_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}"
+    COMMIT="${PICOBOX_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
+    DATE="${PICOBOX_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+    LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildDate=${DATE}"
+
+    export CGO_ENABLED=0
+    go build -trimpath -ldflags="${LDFLAGS}" -o "$PICOBOXD_BIN" ./cmd/picoboxd
+    go build -trimpath -ldflags="${LDFLAGS}" -o "$PICOBOX_MASTER_BIN" ./cmd/picobox-master
+    log_success "Stripped Go binaries built (version=${VERSION}, commit=${COMMIT})."
+
     if [ -d "web" ]; then
         (cd web && npm ci && npm run build)
         log_success "Production Web build completed."
     fi
+
+    # Emit checksums for release artifacts.
+    (cd "$BIN_DIR" && sha256sum * > checksums.txt)
+    log_success "Checksums written to $BIN_DIR/checksums.txt"
 }
 
 do_clean() {
-    log_info "Cleaning..."
-    rm -rf bin/ logs/ web/.next web/node_modules
+    log_info "Cleaning build artifacts..."
+    rm -rf "$BIN_DIR" logs/ web/.next web/node_modules
+    log_success "Cleaned build outputs."
+}
 
-    # Storage might contain root-owned files from agent runs
-    if [ -d "$PICOBOX_STORAGE_DIR" ]; then
-        log_warn "Removing storage directory (may require sudo)..."
-        SUDO="" && command -v sudo &> /dev/null && SUDO="sudo"
-        $SUDO rm -rf "$PICOBOX_STORAGE_DIR"
+do_clean_data() {
+    if [ ! -d "$PICOBOX_STORAGE_DIR" ]; then
+        log_info "No storage directory to remove."
+        return 0
     fi
-    log_success "Cleaned."
+    log_warn "About to remove runtime storage at $PICOBOX_STORAGE_DIR"
+    log_warn "This is destructive and may require sudo for root-owned files."
+    if [ "${PICOBOX_CONFIRM_CLEAN_DATA:-}" != "yes" ]; then
+        log_error "Set PICOBOX_CONFIRM_CLEAN_DATA=yes to proceed."
+    fi
+    local SUDO=""
+    command -v sudo &> /dev/null && SUDO="sudo"
+    $SUDO rm -rf "$PICOBOX_STORAGE_DIR"
+    log_success "Storage directory removed."
 }
 
 # --- Router ---
 
-case "$1" in
-    setup)  do_setup "${2:-false}" ;;
-    build)  do_build ;;
-    test)   do_test "${2:-unit}" ;;
-    e2e)    do_e2e ;;
-    run)    do_run ;;
-    stop)   do_stop ;;
-    doctor) do_doctor ;;
-    logs)   do_logs "$2" "$3" ;;
-    release) do_release ;;
-    clean)  do_clean ;;
-    tidy)   do_tidy ;;
-    lint)   do_lint ;;
+CMD="${1:-}"
+case "$CMD" in
+    setup)       do_setup "${2:-false}" ;;
+    build)       do_build ;;
+    proto)       do_proto ;;
+    test)        do_test "${2:-unit}" ;;
+    e2e)         shift || true; do_e2e "$@" ;;
+    run)         do_run ;;
+    stop)        do_stop ;;
+    doctor)      do_doctor ;;
+    logs)        do_logs "${2:-all}" "${3:-50}" ;;
+    release)     do_release ;;
+    clean)       do_clean ;;
+    clean:data)  do_clean_data ;;
+    tidy)        do_tidy ;;
+    fmt)         do_fmt ;;
+    fmt:check)   do_fmt_check ;;
+    lint)        do_lint ;;
     -h|--help|"") print_usage ;;
-    *)      print_usage; exit 1 ;;
+    *)           print_usage; exit 1 ;;
 esac
