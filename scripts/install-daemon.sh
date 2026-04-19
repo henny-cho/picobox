@@ -11,8 +11,8 @@ if [ "$EUID" -ne 0 ]; then
   log_error "Please run this installer as root (sudo)."
 fi
 
-DAEMON_BIN="bin/picoboxd"
-SERVICE_TEMPLATE="pkg/daemon/picoboxd.service"
+DAEMON_BIN="$ROOT_DIR/bin/picoboxd"
+SERVICE_TEMPLATE="$ROOT_DIR/deployments/picoboxd.service"
 TARGET_BIN_DIR="/usr/local/bin"
 SYSTEMD_DIR="/etc/systemd/system"
 
@@ -27,12 +27,10 @@ if [ ! -f "$SERVICE_TEMPLATE" ]; then
 fi
 
 log_info "Copying binary to $TARGET_BIN_DIR..."
-cp $DAEMON_BIN $TARGET_BIN_DIR/picoboxd
-chmod +x $TARGET_BIN_DIR/picoboxd
+install -m 0755 "$DAEMON_BIN" "$TARGET_BIN_DIR/picoboxd"
 
 log_info "Setting up systemd service..."
-cp $SERVICE_TEMPLATE $SYSTEMD_DIR/picoboxd.service
-chmod 644 $SYSTEMD_DIR/picoboxd.service
+install -m 0644 "$SERVICE_TEMPLATE" "$SYSTEMD_DIR/picoboxd.service"
 
 log_info "Reloading systemd manager configuration..."
 systemctl daemon-reload
