@@ -109,15 +109,25 @@ PicoBox uses a unified task runner `./scripts/task.sh` for all automation.
 | Command | Description |
 | --- | --- |
 | `setup [ci]` | Install system dependencies, toolchains (Go, Node), and plugins. |
-| `build` | Generate Proto code and build Go (Master/Agent) & Web binaries. |
+| `doctor` | Verify kernel, cgroups, toolchain, and runtime dependencies. |
+| `proto` | Regenerate gRPC Go stubs from `api/proto/picobox.proto`. |
+| `build` | Build Go (Master/Agent) and Web binaries (no source mutation). |
 | `test [unit]` | Run Go unit tests and Web (Jest) tests. |
-| `test e2e` | Run full-stack runtime E2E verification loop. |
+| `test e2e` | Run full-stack runtime E2E verification loop (requires root). |
+| `e2e --skip-build` | Run E2E against pre-built binaries in `bin/` (used in CI). |
 | `test local` | Simulate GitHub Actions locally using `act` (requires act & Docker). |
 | `run` | Start Master, Agent, and Web Dashboard in development mode. |
-| `stop` | Stop all background processes (Master, Agent, Web). |
-| `clean` | Remove all build artifacts, logs, and temporary storage. |
+| `stop` | Stop background processes tracked via `logs/*.pid`. |
+| `logs [service]` | Tail logs for master / agent / web. Use `clear` to purge. |
+| `release` | Build production binaries with `-trimpath`, version metadata, and `checksums.txt`. |
+| `clean` | Remove build artifacts (bin/, web/.next, logs/). Safe to re-run. |
+| `clean:data` | Remove runtime storage (`.storage/`). Destructive — requires `PICOBOX_CONFIRM_CLEAN_DATA=yes`. |
 | `tidy` | Run `go mod tidy` for Go dependency management. |
+| `fmt` | Apply gofmt and trim trailing whitespace in-place. |
+| `fmt:check` | Verify formatting without modifying files (CI mode). |
 | `lint` | Run `golangci-lint` to ensure code quality. |
+
+Local overrides: copy `scripts/env.sh.example` to `scripts/env.sh` (gitignored) to set `PICOBOX_API_TOKEN` and other environment variables.
 
 ---
 

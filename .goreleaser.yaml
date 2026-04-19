@@ -1,0 +1,67 @@
+version: 2
+
+before:
+  hooks:
+    - go mod download
+    - ./scripts/task.sh proto
+
+builds:
+  - id: picoboxd
+    main: ./cmd/picoboxd
+    binary: picoboxd
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.ShortCommit}}
+      - -X main.BuildDate={{.Date}}
+
+  - id: picobox-master
+    main: ./cmd/picobox-master
+    binary: picobox-master
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.ShortCommit}}
+      - -X main.BuildDate={{.Date}}
+
+archives:
+  - id: default
+    ids: [picoboxd, picobox-master]
+    name_template: "picobox_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - deployments/picoboxd.service
+      - scripts/install-daemon.sh
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: '{{ .Tag }}-next'
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^ci:'
+      - '^test:'
+
+release:
+  draft: false
+  prerelease: auto
+  mode: replace

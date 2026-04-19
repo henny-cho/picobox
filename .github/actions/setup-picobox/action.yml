@@ -1,37 +1,64 @@
 name: 'Setup PicoBox Environment'
-description: 'Centralized setup for Go, Node.js, and system dependencies'
+description: 'Centralized setup for Go, Node.js, protoc, and Go tool caches'
 runs:
   using: "composite"
   steps:
-    - name: Setup Go Environment
+    - name: Read pinned versions
+      id: versions
+      shell: bash
+      run: |
+        # shellcheck source=/dev/null
+        source scripts/versions.sh
+        {
+          echo "go=${GO_VERSION}"
+          echo "node=${NODE_VERSION}"
+          echo "protoc=${PROTOC_VERSION}"
+          echo "golangci=${GOLANGCI_LINT_VERSION}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.26.1'
+        go-version: ${{ steps.versions.outputs.go }}
         cache: true
 
-    - name: Setup Node.js Environment
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '24'
+        node-version: ${{ steps.versions.outputs.node }}
         cache: 'npm'
         cache-dependency-path: 'web/package-lock.json'
 
-    - name: Cache Build Tools
+    - name: Cache build tools (protoc, golangci-lint)
       uses: actions/cache@v4
       with:
         path: .tools
         key: ${{ runner.os }}-picobox-tools-${{ hashFiles('scripts/versions.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-picobox-tools-
 
-    - name: Give execution permission to scripts
+    - name: Cache Go build outputs
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ steps.versions.outputs.go }}-${{ hashFiles('go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ steps.versions.outputs.go }}-
+
+    - name: Make scripts executable
       shell: bash
       run: chmod +x ./scripts/*.sh
 
-    - name: Run Environment Setup (CI Mode)
+    - name: Run environment setup (CI mode)
       shell: bash
       run: ./scripts/task.sh setup true
 
-    - name: Add Tools to PATH
+    - name: Export tool paths
       shell: bash
       run: |
-        echo "$(pwd)/.tools/bin" >> $GITHUB_PATH
-        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+        {
+          echo "$(pwd)/.tools/bin"
+          echo "$(go env GOPATH)/bin"
+        } >> "$GITHUB_PATH"
