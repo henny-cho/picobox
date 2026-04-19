@@ -1,33 +1,39 @@
-FROM golang:1.26.1-bookworm AS builder
+# syntax=docker/dockerfile:1.7
+ARG GO_VERSION=1.26.1
+FROM golang:${GO_VERSION}-bookworm AS builder
 
-# Set Go env for static linking
 ENV CGO_ENABLED=0 \
-    GOOS=linux \
-    GOARCH=amd64
+    GOOS=linux
+
+ARG TARGETARCH
+ENV GOARCH=${TARGETARCH:-amd64}
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 WORKDIR /build
 
-# Copy go mod and download dependencies
-# Assumes context is project root
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
-# Copy source code
 COPY . .
 
-# Build Master
-RUN go build -ldflags="-w -s" -o picobox-master ./cmd/picobox-master
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath \
+        -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildDate=${BUILD_DATE}" \
+        -o /out/picobox-master ./cmd/picobox-master
 
-# Use distroless static as final runtime
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12:nonroot
 
 WORKDIR /
+COPY --from=builder /out/picobox-master /picobox-master
 
-# Copy the binary from builder
-COPY --from=builder /build/picobox-master /picobox-master
+USER nonroot:nonroot
 
-# Master ports: gRPC(50051) and REST(3000)
 EXPOSE 50051 3000
 
-# Run the master node
 ENTRYPOINT ["/picobox-master"]

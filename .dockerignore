@@ -1,0 +1,45 @@
+# Build outputs
+bin/
+dist/
+/picobox-master
+/picoboxd
+*.test
+*.out
+coverage.txt
+
+# Runtime state
+logs/
+*.log
+/tmp/
+/.storage/
+/storage/
+/dev/
+/etc/
+/proc/
+/sys/
+/var/
+/test_rootfs/
+*.db
+
+# Dev dependencies
+node_modules/
+vendor/
+.tools/
+
+# Next.js caches
+web/.next/
+web/.swc/
+web/node_modules/
+
+# VCS / IDE
+.git/
+.github/
+.gitignore
+.agents/
+.vscode/
+.idea/
+*.swp
+
+# Docs
+README.md
+doc/
