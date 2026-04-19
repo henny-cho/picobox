@@ -1,38 +1,49 @@
 #!/usr/bin/env bash
-# PicoBox RootFS Preparation Script
+# Prepare a minimal busybox rootfs used by sandbox tests.
+#
+# Usage: prepare-rootfs.sh [<target-dir>] [--tarball]
+#
+#   target-dir  Defaults to $PICOBOX_STORAGE_DIR/rootfs/busybox.
+#   --tarball   Also emit <target-dir>.tar.gz (for tests that consume an archive).
 
-set -e
+set -euo pipefail
+IFS=$'\n\t'
 
-# 0. Load Environment
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 
-# Use PICOBOX_STORAGE_DIR if set, otherwise default to .storage
-STORAGE_DIR="${PICOBOX_STORAGE_DIR:-$ROOT_DIR/.storage}"
-ROOTFS_DIR="${1:-$STORAGE_DIR/rootfs/busybox}"
+MAKE_TARBALL=false
+TARGET_DIR=""
+for arg in "$@"; do
+    case "$arg" in
+        --tarball) MAKE_TARBALL=true ;;
+        -h|--help)
+            sed -n '2,8p' "$0"; exit 0 ;;
+        *) TARGET_DIR="$arg" ;;
+    esac
+done
+
+ROOTFS_DIR="${TARGET_DIR:-$PICOBOX_STORAGE_DIR/rootfs/busybox}"
 
 log_info "Preparing minimal filesystem in $ROOTFS_DIR..."
 
-# 1. Create directory structure
 rm -rf "$ROOTFS_DIR"
 mkdir -p "$ROOTFS_DIR"/{bin,dev,etc,proc,sys,tmp,var}
 
-# 2. Copy busybox binary
-BUSYBOX_BIN=$(which busybox)
+BUSYBOX_BIN=$(command -v busybox) \
+    || log_error "busybox not found. Install it first (apt install busybox, etc)."
 cp "$BUSYBOX_BIN" "$ROOTFS_DIR/bin/busybox"
 
-# 3. Create essential links
-ln -sf busybox "$ROOTFS_DIR/bin/sh"
-ln -sf busybox "$ROOTFS_DIR/bin/ls"
-ln -sf busybox "$ROOTFS_DIR/bin/echo"
-ln -sf busybox "$ROOTFS_DIR/bin/sleep"
+for link in sh ls echo sleep; do
+    ln -sf busybox "$ROOTFS_DIR/bin/$link"
+done
 
-# 4. Create a dummy test script
-cat <<EOF > "$ROOTFS_DIR/test-init.sh"
+cat > "$ROOTFS_DIR/test-init.sh" <<'EOF'
 #!/bin/sh
 echo "--- PicoBox Container Started ---"
-echo "Hostname: \$(hostname)"
-echo "PID: \$\$"
+echo "Hostname: $(hostname)"
+echo "PID: $$"
 echo "Environment:"
 env
 echo "Sleeping for 60 seconds..."
@@ -42,8 +53,9 @@ chmod +x "$ROOTFS_DIR/test-init.sh"
 
 log_success "Minimal RootFS prepared at $ROOTFS_DIR."
 
-# 5. Create tarball version for testing agent's new feature
-TARBALL_PATH="$ROOTFS_DIR.tar.gz"
-log_info "Creating tarball: $TARBALL_PATH..."
-(cd "$ROOTFS_DIR" && tar -czf "$TARBALL_PATH" .)
-log_success "Tarball prepared at $TARBALL_PATH."
+if [ "$MAKE_TARBALL" = true ]; then
+    TARBALL_PATH="$ROOTFS_DIR.tar.gz"
+    log_info "Creating tarball: $TARBALL_PATH..."
+    (cd "$ROOTFS_DIR" && tar -czf "$TARBALL_PATH" .)
+    log_success "Tarball prepared at $TARBALL_PATH."
+fi
