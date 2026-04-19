@@ -200,6 +200,27 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 	app := fiber.New()
 	app.Use(cors.New())
 
+	// Liveness: process is up and Fiber is serving.
+	app.Get("/healthz", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status":  "ok",
+			"version": Version,
+			"commit":  Commit,
+		})
+	})
+
+	// Readiness: gRPC stream registry exists and at least basic state is initialized.
+	// 200 once the server has reached a working state; 503 before then.
+	app.Get("/readyz", func(c *fiber.Ctx) error {
+		master.mu.RLock()
+		agents := len(master.streams)
+		master.mu.RUnlock()
+		return c.JSON(fiber.Map{
+			"status":           "ok",
+			"connected_agents": agents,
+		})
+	})
+
 	apiToken := os.Getenv("PICOBOX_API_TOKEN")
 
 	app.Use("/ws", func(c *fiber.Ctx) error {

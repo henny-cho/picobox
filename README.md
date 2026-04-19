@@ -129,6 +129,16 @@ PicoBox uses a unified task runner `./scripts/task.sh` for all automation.
 
 Local overrides: copy `scripts/env.sh.example` to `scripts/env.sh` (gitignored) to set `PICOBOX_API_TOKEN` and other environment variables.
 
+### Health endpoints
+The master exposes two operational endpoints on the REST port (default `:3000`):
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /healthz` | Liveness probe — returns `200 {status, version, commit}` once Fiber is serving. |
+| `GET /readyz`  | Readiness probe — returns `200 {status, connected_agents}`; useful for load balancers. |
+
+The distroless container image ships with a tiny `/healthcheck` binary wired up as `HEALTHCHECK CMD`, so Docker / Kubernetes can probe it without requiring `curl` or a shell inside the image.
+
 ---
 
 ## 🛡 Development Policy
