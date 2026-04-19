@@ -126,6 +126,7 @@ PicoBox uses a unified task runner `./scripts/task.sh` for all automation.
 | `fmt` | Apply gofmt and trim trailing whitespace in-place. |
 | `fmt:check` | Verify formatting without modifying files (CI mode). |
 | `lint` | Run `golangci-lint` to ensure code quality. |
+| `ci` | Reproduce the CI gate locally (`fmt:check → lint → test unit`). |
 
 Local overrides: copy `scripts/env.sh.example` to `scripts/env.sh` (gitignored) to set `PICOBOX_API_TOKEN` and other environment variables.
 
@@ -138,6 +139,110 @@ The master exposes two operational endpoints on the REST port (default `:3000`):
 | `GET /readyz`  | Readiness probe — returns `200 {status, connected_agents}`; useful for load balancers. |
 
 The distroless container image ships with a tiny `/healthcheck` binary wired up as `HEALTHCHECK CMD`, so Docker / Kubernetes can probe it without requiring `curl` or a shell inside the image.
+
+---
+
+## 🧑‍💻 Development Workflow
+
+This section is the contributor's day-in-the-life guide. Every command below maps 1:1 to a step the CI runs, so "green locally" means "green on PR".
+
+### 0. One-time setup
+
+```bash
+./scripts/task.sh setup          # install system pkgs, protoc, Go plugins, golangci-lint
+./scripts/task.sh doctor         # verify kernel / cgroups / toolchain / runtime deps
+cp scripts/env.sh.example scripts/env.sh   # (optional) local token + path overrides
+```
+
+`setup` is idempotent: it reinstalls tools only when the version pin in `scripts/versions.sh` no longer matches. `doctor` is safe to run any time you hit an environment-looking error.
+
+### 1. Inner loop (edit → verify)
+
+Fast feedback, no running services:
+
+```bash
+./scripts/task.sh fmt            # gofmt + trim trailing whitespace (writes)
+./scripts/task.sh fmt:check      # verify only (CI mode)
+./scripts/task.sh lint           # golangci-lint
+./scripts/task.sh test unit      # go test -race ./... + web (Jest)
+./scripts/task.sh ci             # fmt:check -> lint -> test unit   (single command)
+```
+
+Rule of thumb: **run `./scripts/task.sh ci` before every `git push`.** It is the exact contract of the `lint` + `test` CI jobs.
+
+Protobuf changes: after editing `api/proto/picobox.proto`, regenerate stubs explicitly — `build` does this for you, but `proto` is faster when you just want to check generation:
+
+```bash
+./scripts/task.sh proto
+```
+
+### 2. Build + run the full stack
+
+```bash
+./scripts/task.sh build          # proto + Go (agent+master) + Web
+./scripts/task.sh run            # start master, agent, web; tails pid files
+./scripts/task.sh logs           # follow all service logs (Ctrl+C to exit)
+./scripts/task.sh logs master 200   # last 200 lines of a single service
+./scripts/task.sh stop           # tear everything down via logs/*.pid
+```
+
+`run` binds on `:50051` (gRPC), `:3000` (master REST + WS) and `:3001` (Next.js dashboard). It auto-opens the dashboard if `xdg-open` is available. The agent needs root for namespace/mount work, so expect to run `sudo -E ./scripts/task.sh run` on Linux when you want the full isolation path.
+
+### 3. Integration / E2E verification
+
+The E2E suite lives in `scripts/e2e.sh` and is also routed through `task.sh e2e`. It boots master+agent, exercises auth, deploy+log-streaming, the scheduler, and the WebSocket terminal.
+
+```bash
+sudo -E ./scripts/task.sh e2e                 # build first, then run
+sudo -E ./scripts/task.sh e2e --skip-build    # reuse existing bin/ (what CI does)
+sudo -E ./scripts/e2e.sh --skip-build         # equivalent, bypasses the dispatcher
+```
+
+Requirements: root (for mount/namespace work), `busybox` on PATH, and `python3` + `websockets` for the WS test. `doctor` flags any of these as missing; the WS test self-skips if `websockets` isn't installed.
+
+### 4. Release-quality local build
+
+```bash
+PICOBOX_VERSION=v0.1.0 ./scripts/task.sh release
+./bin/picobox-master --version
+cat bin/checksums.txt
+```
+
+This is what `GoReleaser` produces in CI for tagged commits: `-trimpath` binaries with `Version/Commit/BuildDate` stamped via `-ldflags -X`, plus a `checksums.txt`.
+
+### 5. CI ↔ local command map
+
+| CI job                   | Local equivalent                                |
+| ------------------------ | ----------------------------------------------- |
+| `lint` + `test`          | `./scripts/task.sh ci`                          |
+| `lint` (formatting)      | `./scripts/task.sh fmt:check`                   |
+| `lint` (golangci-lint)   | `./scripts/task.sh lint`                        |
+| `test`                   | `./scripts/task.sh test unit`                   |
+| `build`                  | `./scripts/task.sh build`                       |
+| `e2e`                    | `sudo -E ./scripts/e2e.sh --skip-build`         |
+| `release-binaries`       | `./scripts/task.sh release` (+ GoReleaser dry-run) |
+| `release-images`         | `docker build -f build/Dockerfile.master .`     |
+
+### 6. Housekeeping
+
+```bash
+./scripts/task.sh clean                         # bin/, web/.next, node_modules, logs/
+PICOBOX_CONFIRM_CLEAN_DATA=yes \
+  ./scripts/task.sh clean:data                  # also remove .storage/ (destructive)
+./scripts/task.sh tidy                          # go mod tidy
+```
+
+### 7. Contributor checklist
+
+Before opening a PR:
+
+- [ ] `./scripts/task.sh ci` is green.
+- [ ] If you touched `api/proto/`, `./scripts/task.sh proto` ran and generated files are committed.
+- [ ] If you touched `scripts/` or `.github/workflows/`, you manually ran the affected flow.
+- [ ] New runtime dependency? Add it to `scripts/task.sh` → `_install_system_packages` and to `doctor`.
+- [ ] Conventional Commits style for commit subject (`fix:`, `feat:`, `refactor:`, `build:`, `ci:`, `docs:`).
+
+Need something that is not yet in `task.sh`? **Don't add a one-off script** — extend `task.sh` so CI and contributors share the same entry point.
 
 ---
 

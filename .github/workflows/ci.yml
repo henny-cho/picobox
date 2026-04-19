@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Contributors can reproduce this job locally with: ./scripts/task.sh ci
   lint:
     name: Lint
     runs-on: ubuntu-24.04
@@ -27,6 +28,7 @@ jobs:
       - name: Run linter
         run: ./scripts/task.sh lint
 
+  # Local equivalent: ./scripts/task.sh test unit
   test:
     name: Unit Tests
     runs-on: ubuntu-24.04
@@ -54,6 +56,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Local equivalent: sudo -E ./scripts/e2e.sh --skip-build (after build job locally)
   e2e:
     name: E2E Verification
     needs: build
@@ -72,5 +75,5 @@ jobs:
           path: bin/
       - name: Ensure executable bits
         run: chmod +x bin/picoboxd bin/picobox-master
-      - name: Run E2E (skip rebuild)
-        run: sudo -E ./scripts/task.sh e2e --skip-build
+      - name: Run E2E suite (skip rebuild)
+        run: sudo -E ./scripts/e2e.sh --skip-build
