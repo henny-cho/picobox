@@ -257,7 +257,9 @@ func handleDeploy(stream pb.AgentService_ControlChannelClient, req *pb.Container
 		}
 
 		streamLogs := func(r io.Reader, isStderr bool) {
-			if r == nil { return }
+			if r == nil {
+				return
+			}
 			scanner := bufio.NewScanner(r)
 			for scanner.Scan() {
 				_ = safeSend(stream, &pb.AgentMessage{

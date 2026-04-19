@@ -155,7 +155,9 @@ func (s *PicoMasterServer) ControlChannel(stream pb.AgentService_ControlChannelS
 				}
 			} else {
 				status := "Error"
-				if resp.Success { status = "Running" }
+				if resp.Success {
+					status = "Running"
+				}
 				globalContainerState[resp.ContainerId] = &ContainerInfo{
 					DeployResponse: resp,
 					Hostname:       hostname,
@@ -361,8 +363,8 @@ func setupFiberApp(master *PicoMasterServer) *fiber.App {
 		}
 		globalContainerState[req.ContainerId] = &ContainerInfo{
 			DeployResponse: &pb.DeployResponse{
-				ContainerId: req.ContainerId,
-				Success:     false,
+				ContainerId:  req.ContainerId,
+				Success:      false,
 				ErrorMessage: "Deploying...",
 			},
 			Hostname: req.Hostname,

@@ -22,12 +22,12 @@ type SandboxConfig struct {
 
 // Sandbox represents a managed container lifecycle.
 type Sandbox struct {
-	Config   SandboxConfig
-	storage  *storage.StorageManager
-	cgroups  *CgroupsManager
-	cmd      *exec.Cmd
-	stdout   io.ReadCloser
-	stderr   io.ReadCloser
+	Config  SandboxConfig
+	storage *storage.StorageManager
+	cgroups *CgroupsManager
+	cmd     *exec.Cmd
+	stdout  io.ReadCloser
+	stderr  io.ReadCloser
 }
 
 // NewSandbox initializes a container facade.
