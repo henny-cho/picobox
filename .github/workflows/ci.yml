@@ -19,7 +19,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-picobox
       - name: Environment diagnostics
         run: ./scripts/task.sh doctor
@@ -33,7 +33,7 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-picobox
       - name: Run tests
         run: ./scripts/task.sh test unit
@@ -44,12 +44,12 @@ jobs:
     outputs:
       artifact-name: picobox-binaries
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-picobox
       - name: Build
         run: ./scripts/task.sh build
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: picobox-binaries
           path: bin/
@@ -62,14 +62,14 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-picobox
       - name: Install WebSocket test dependency
         run: |
           python3 -m pip install --user --break-system-packages websockets \
             || pip3 install --user websockets
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: picobox-binaries
           path: bin/
